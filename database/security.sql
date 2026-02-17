@@ -51,10 +51,6 @@ CREATE POLICY "Admins can manage settings" ON store_settings FOR ALL USING (
 );
 
 -- ==================== ADMIN USERS ====================
--- Only admins can see admin list, only superadmins can manage
-CREATE POLICY "Admins can view admin users" ON admin_users FOR SELECT USING (
-  EXISTS (SELECT 1 FROM admin_users WHERE id = auth.uid() AND is_active = true)
-);
-CREATE POLICY "Superadmins can manage admin users" ON admin_users FOR ALL USING (
-  EXISTS (SELECT 1 FROM admin_users WHERE id = auth.uid() AND role = 'superadmin' AND is_active = true)
-);
+-- Authenticated users can read, service_role can manage (avoids infinite recursion)
+CREATE POLICY "Admin users viewable by authenticated" ON admin_users FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Superadmins can manage admin users" ON admin_users FOR ALL USING (auth.role() = 'service_role');
