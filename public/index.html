@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ברכת השדה - פירות וירקות טריים | בית שמש</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/shared.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Noto Sans Hebrew', sans-serif; }
+    body { direction: rtl; background: #fafaf5; }
+    .gradient-hero { background: linear-gradient(135deg, #2d5016 0%, #4a7c23 50%, #6ba832 100%); }
+    .card-hover { transition: all 0.3s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.12); }
+    .qty-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+    .qty-btn:hover { transform: scale(1.1); }
+    .category-chip { transition: all 0.2s; cursor: pointer; }
+    .category-chip:hover, .category-chip.active { background: #4a7c23; color: white; }
+    .cart-badge { position: absolute; top: -8px; left: -8px; background: #e53e3e; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+    .store-closed-banner { background: linear-gradient(90deg, #f56565, #e53e3e); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4a7c23; box-shadow: 0 0 0 3px rgba(74, 124, 35, 0.1); }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .toast { animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, createContext, useContext } = React;
+
+// Shared globals from js/shared.js: supabaseClient, SUPABASE_URL, SUPABASE_KEY, PRODUCT_IMAGES, getProductImage, CATEGORIES, CATEGORY_MAP
+const supabase = supabaseClient;
+
+// ==================== FALLBACK DATA ====================
+const FALLBACK_PRODUCTS = [
+  { id: '1', name_he: 'תפוחים חרמון', category: 'fruits', unit: 'kg', image_emoji: '🍎', description_he: 'תפוחים טריים', price: 12.90 },
+  { id: '2', name_he: 'בננות', category: 'fruits', unit: 'kg', image_emoji: '🍌', description_he: 'בננות בשלות', price: 9.90 },
+  { id: '3', name_he: 'עגבניות', category: 'vegetables', unit: 'kg', image_emoji: '🍅', description_he: 'עגבניות טריות', price: 6.90 },
+  { id: '4', name_he: 'מלפפונים', category: 'vegetables', unit: 'kg', image_emoji: '🥒', description_he: 'מלפפונים ירוקים', price: 5.90 },
+];
+
+const DEFAULT_SETTINGS = {
+  ordering_open: 'true', ordering_start_hour: '07:00', ordering_end_hour: '20:00',
+  delivery_fee: '15', min_order_amount: '50', delivery_enabled: 'true', pickup_enabled: 'true',
+  store_phone: '02-999-8888', store_address: 'רחוב הרצל 12, בית שמש', delivery_area: 'בית שמש בלבד',
+};
+
+// ==================== CONTEXT ====================
+const CartContext = createContext();
+const PageContext = createContext();
+const DataContext = createContext();
+
+// ==================== DATA PROVIDER ====================
+function DataProvider({ children }) {
+  const [products, setProducts] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [dbConnected, setDbConnected] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    try {
+      // Load products
+      const { data: prods, error: prodErr } = await supabase
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+
+      if (prodErr) throw prodErr;
+
+      // Load today's prices
+      const today = new Date().toISOString().split('T')[0];
+      const { data: prices } = await supabase
+        .from('daily_prices')
+        .select('*')
+        .eq('date', today)
+        .eq('stock_available', true);
+
+      // Merge products with prices
+      const priceMap = {};
+      if (prices) prices.forEach(p => { priceMap[p.product_id] = p.price_nis; });
+
+      const merged = (prods || []).map(p => ({
+        ...p,
+        price: priceMap[p.id] || null,
+      }));
+
+      setProducts(merged);
+      setDbConnected(true);
+
+      // Load settings
+      const { data: sets } = await supabase.from('store_settings').select('*');
+      if (sets && sets.length > 0) {
+        const settingsObj = {};
+        sets.forEach(s => { settingsObj[s.setting_key] = s.setting_value; });
+        setSettings(settingsObj);
+      }
+    } catch (err) {
+      console.log('Supabase not ready, using fallback data:', err.message);
+      setProducts(FALLBACK_PRODUCTS);
+      setDbConnected(false);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <DataContext.Provider value={{ products, settings, loading, dbConnected, reload: loadData }}>
+      {children}
+    </DataContext.Provider>
+  );
+}
+
+function useData() { return useContext(DataContext); }
+
+// ==================== CART PROVIDER ====================
+function CartProvider({ children }) {
+  const [items, setItems] = useState([]);
+  const [toasts, setToasts] = useState([]);
+
+  const addToCart = useCallback((product, qty = 1) => {
+    setItems(prev => {
+      const existing = prev.find(i => i.product.id === product.id);
+      if (existing) {
+        return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + qty } : i);
+      }
+      return [...prev, { product, quantity: qty }];
+    });
+    showToast(product.name_he + ' נוסף לסל');
+  }, []);
+
+  const updateQuantity = useCallback((productId, qty) => {
+    if (qty <= 0) setItems(prev => prev.filter(i => i.product.id !== productId));
+    else setItems(prev => prev.map(i => i.product.id === productId ? { ...i, quantity: qty } : i));
+  }, []);
+
+  const removeItem = useCallback((productId) => {
+    setItems(prev => prev.filter(i => i.product.id !== productId));
+  }, []);
+
+  const clearCart = useCallback(() => setItems([]), []);
+
+  const showToast = useCallback((message) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
+
+  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
+  const totalPrice = items.reduce((sum, i) => sum + ((i.product.price || 0) * i.quantity), 0);
+
+  return (
+    <CartContext.Provider value={{ items, addToCart, updateQuantity, removeItem, clearCart, totalItems, totalPrice, toasts, showToast }}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+
+function useCart() { return useContext(CartContext); }
+
+// ==================== COMPONENTS ====================
+function Toasts() {
+  const { toasts } = useCart();
+  return (
+    <div style={{ position: 'fixed', top: 20, left: 20, zIndex: 1000 }}>
+      {toasts.map(t => (
+        <div key={t.id} className="toast bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg mb-2 flex items-center gap-2">
+          <span>&#10003;</span> {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Header() {
+  const { totalItems } = useCart();
+  const { page, setPage } = useContext(PageContext);
+  return (
+    <header className="bg-white shadow-md sticky top-0 z-50">
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="flex items-center justify-between h-16">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setPage('home')}>
+            <div className="w-10 h-10 rounded-full bg-green-700 flex items-center justify-center text-white font-bold text-lg">ב</div>
+            <div>
+              <h1 className="text-lg font-bold text-green-800 leading-tight">ברכת השדה</h1>
+              <p className="text-xs text-gray-500">פירות וירקות טריים</p>
+            </div>
+          </div>
+          <nav className="hidden md:flex items-center gap-6">
+            <button onClick={() => setPage('home')} className={`text-sm font-medium ${page === 'home' ? 'text-green-700' : 'text-gray-600 hover:text-green-600'}`}>דף הבית</button>
+            <button onClick={() => setPage('shop')} className={`text-sm font-medium ${page === 'shop' ? 'text-green-700' : 'text-gray-600 hover:text-green-600'}`}>החנות</button>
+            <button onClick={() => setPage('about')} className={`text-sm font-medium ${page === 'about' ? 'text-green-700' : 'text-gray-600 hover:text-green-600'}`}>אודות</button>
+          </nav>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setPage('cart')} className="relative p-2 rounded-full hover:bg-gray-100 transition">
+              <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+            </button>
+            <a href="admin.html" className="text-xs text-gray-400 hover:text-gray-600 hidden md:block">ניהול</a>
+
+          </div>
+        </div>
+      </div>
+      <div className="md:hidden border-t flex justify-around py-2 bg-white">
+        <button onClick={() => setPage('home')} className={`text-xs ${page === 'home' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>🏠 בית</button>
+        <button onClick={() => setPage('shop')} className={`text-xs ${page === 'shop' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>🛒 חנות</button>
+        <button onClick={() => setPage('cart')} className={`text-xs ${page === 'cart' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>🧺 סל ({totalItems})</button>
+        <button onClick={() => setPage('about')} className={`text-xs ${page === 'about' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>ℹ️ אודות</button>
+      </div>
+    </header>
+  );
+}
+
+function StoreStatusBanner() {
+  const { settings, dbConnected } = useData();
+  const open = settings.ordering_open === 'true';
+  if (!dbConnected) {
+    return (
+      <div className="bg-yellow-50 border-b border-yellow-200 text-center py-2 px-4">
+        <p className="text-yellow-800 text-sm">⚠️ מצב דמו - הטבלאות ב-Supabase טרם נוצרו. הרץ את קבצי ה-SQL תחילה.</p>
+      </div>
+    );
+  }
+  if (!open) {
+    return (
+      <div className="store-closed-banner text-white text-center py-3 px-4">
+        <p className="font-bold">❌ ההזמנות סגורות כרגע</p>
+        <p className="text-sm opacity-90">שעות הזמנה: {settings.ordering_start_hour} - {settings.ordering_end_hour}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-green-50 border-b border-green-200 text-center py-2 px-4">
+      <p className="text-green-800 text-sm">✅ <span className="font-bold">ההזמנות פתוחות</span> | שעות: {settings.ordering_start_hour} - {settings.ordering_end_hour}</p>
+    </div>
+  );
+}
+
+// ==================== HOME PAGE ====================
+function HomePage() {
+  const { setPage } = useContext(PageContext);
+  const { settings, products } = useData();
+  const fee = parseFloat(settings.delivery_fee) || 15;
+  const minOrder = parseFloat(settings.min_order_amount) || 50;
+  return (
+    <div className="fade-in">
+      <div className="gradient-hero text-white py-16 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="text-6xl mb-4">🍎🥬🍊</div>
+          <h1 className="text-4xl md:text-5xl font-extrabold mb-4">ברכת השדה</h1>
+          <p className="text-xl md:text-2xl opacity-90 mb-2">פירות וירקות טריים מהשדה אליכם</p>
+          <p className="text-lg opacity-75 mb-8">משלוח ואיסוף עצמי בבית שמש</p>
+          <button onClick={() => setPage('shop')} className="bg-white text-green-800 px-8 py-4 rounded-full text-lg font-bold hover:bg-green-50 transition shadow-lg">🛒 התחילו להזמין</button>
+        </div>
+      </div>
+      <div className="max-w-5xl mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-white rounded-2xl p-6 text-center shadow-sm card-hover">
+            <div className="text-4xl mb-3">🌅</div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">מחירים מתעדכנים יומית</h3>
+            <p className="text-gray-600 text-sm">המחירים מתעדכנים כל בוקר לפי המחירון הרשמי</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 text-center shadow-sm card-hover">
+            <div className="text-4xl mb-3">🚗</div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">משלוח עד הבית</h3>
+            <p className="text-gray-600 text-sm">משלוח לכל רחבי בית שמש תמורת {fee}₪ בלבד, או איסוף עצמי בחינם</p>
+          </div>
+          <div className="bg-white rounded-2xl p-6 text-center shadow-sm card-hover">
+            <div className="text-4xl mb-3">✨</div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">טרי מהשדה</h3>
+            <p className="text-gray-600 text-sm">אנחנו מקפידים על איכות - ישירות מחקלאי ישראל</p>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white py-12">
+        <div className="max-w-5xl mx-auto px-4">
+          <h2 className="text-2xl font-bold text-center text-gray-800 mb-8">הקטגוריות שלנו</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {CATEGORIES.filter(c => c.id !== 'all').map(cat => (
+              <button key={cat.id} onClick={() => setPage('shop', cat.id)} className="bg-green-50 rounded-2xl p-6 text-center hover:bg-green-100 transition card-hover">
+                <div className="text-4xl mb-2">{cat.icon}</div>
+                <div className="font-bold text-green-800">{cat.name}</div>
+                <div className="text-xs text-gray-500 mt-1">{products.filter(p => p.category === cat.id).length} מוצרים</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="max-w-5xl mx-auto px-4 py-12">
+        <div className="bg-green-800 rounded-2xl p-8 text-white text-center">
+          <h3 className="text-xl font-bold mb-2">📍 {settings.store_address || 'בית שמש'}</h3>
+          <p className="opacity-90">טלפון: {settings.store_phone} | שעות: {settings.ordering_start_hour} - {settings.ordering_end_hour}</p>
+          <p className="opacity-75 text-sm mt-2">הזמנה מינימלית: {minOrder}₪ | משלוח: {fee}₪</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== SHOP ====================
+function ProductCard({ product }) {
+  const { addToCart, items } = useCart();
+  const [qty, setQty] = useState(1);
+  const inCart = items.find(i => i.product.id === product.id);
+  const hasPrice = product.price != null;
+
+  return (
+    <div className={`bg-white rounded-xl shadow-sm overflow-hidden card-hover border border-gray-100 ${!hasPrice ? 'opacity-60' : ''}`}>
+      <div className="h-32 flex items-center justify-center bg-gradient-to-b from-green-50 to-white overflow-hidden">
+        {getProductImage(product.name_he, product.image_url) ? (
+          <img src={getProductImage(product.name_he, product.image_url)} alt={product.name_he} className="w-full h-full object-cover" loading="lazy" />
+        ) : (
+          <span className="text-5xl">{product.image_emoji || '🍎'}</span>
+        )}
+      </div>
+      <div className="p-4">
+        <h3 className="font-bold text-gray-800 text-sm mb-1">{product.name_he}</h3>
+        <p className="text-xs text-gray-500 mb-2">{product.description_he || ''}</p>
+        <div className="flex items-center justify-between mb-3">
+          {hasPrice ? (
+            <span className="text-lg font-bold text-green-700">{product.price.toFixed(2)}₪</span>
+          ) : (
+            <span className="text-sm text-gray-400">מחיר לא עודכן</span>
+          )}
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">{product.unit === 'kg' ? 'לק"ג' : 'ליחידה'}</span>
+        </div>
+        {!hasPrice ? (
+          <div className="text-center text-xs text-gray-400 py-2">לא זמין היום</div>
+        ) : inCart ? (
+          <div className="flex items-center justify-center bg-green-50 rounded-lg p-2">
+            <span className="text-xs text-green-700 font-medium">✓ בסל ({inCart.quantity}{product.unit === 'kg' ? ' ק"ג' : ''})</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center border rounded-lg overflow-hidden">
+              <button onClick={() => setQty(q => Math.max(product.unit === 'kg' ? 0.5 : 1, q - (product.unit === 'kg' ? 0.5 : 1)))} className="px-2 py-1 bg-gray-50 hover:bg-gray-100 text-sm font-bold">-</button>
+              <span className="px-3 py-1 text-sm font-medium">{qty}{product.unit === 'kg' ? ' ק"ג' : ''}</span>
+              <button onClick={() => setQty(q => q + (product.unit === 'kg' ? 0.5 : 1))} className="px-2 py-1 bg-gray-50 hover:bg-gray-100 text-sm font-bold">+</button>
+            </div>
+            <button onClick={() => { addToCart(product, qty); setQty(1); }} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-green-700 transition">הוסף</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ShopPage({ initialCategory }) {
+  const { products, loading } = useData();
+  const [activeCategory, setActiveCategory] = useState(initialCategory || 'all');
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    return products.filter(p => {
+      const matchCat = activeCategory === 'all' || p.category === activeCategory;
+      const matchSearch = !search || (p.name_he && p.name_he.includes(search));
+      return matchCat && matchSearch;
+    });
+  }, [products, activeCategory, search]);
+
+  if (loading) return <div className="text-center py-20 text-gray-400"><div className="text-4xl mb-3">⏳</div>טוען מוצרים...</div>;
+
+  return (
+    <div className="fade-in max-w-6xl mx-auto px-4 py-6">
+      <div className="mb-6">
+        <input type="text" placeholder="🔍 חיפוש מוצרים..." value={search} onChange={e => setSearch(e.target.value)} className="w-full md:w-96 px-4 py-3 rounded-xl border border-gray-200 bg-white text-right" />
+      </div>
+      <div className="flex flex-wrap gap-2 mb-6">
+        {CATEGORIES.map(cat => (
+          <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`category-chip px-4 py-2 rounded-full text-sm font-medium border ${activeCategory === cat.id ? 'active bg-green-700 text-white border-green-700' : 'bg-white text-gray-600 border-gray-200'}`}>
+            {cat.icon} {cat.name}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {filtered.map(p => <ProductCard key={p.id} product={p} />)}
+      </div>
+      {filtered.length === 0 && <div className="text-center py-12 text-gray-400"><div className="text-4xl mb-3">🔍</div><p>לא נמצאו מוצרים</p></div>}
+    </div>
+  );
+}
+
+// ==================== CART ====================
+function CartPage() {
+  const { items, updateQuantity, removeItem, totalPrice } = useCart();
+  const { setPage } = useContext(PageContext);
+  const { settings } = useData();
+  const minOrder = parseFloat(settings.min_order_amount) || 50;
+
+  if (items.length === 0) {
+    return (
+      <div className="fade-in max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="text-6xl mb-4">🛒</div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">הסל ריק</h2>
+        <p className="text-gray-500 mb-6">עדיין לא הוספת מוצרים לסל</p>
+        <button onClick={() => setPage('shop')} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition">🛒 להתחיל לקנות</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-in max-w-3xl mx-auto px-4 py-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">🧺 סל הקניות שלי</h2>
+      <div className="space-y-3 mb-6">
+        {items.map(({ product, quantity }) => (
+          <div key={product.id} className="bg-white rounded-xl p-4 shadow-sm flex items-center gap-4">
+            {getProductImage(product.name_he, product.image_url) ? (
+              <img src={getProductImage(product.name_he, product.image_url)} alt={product.name_he} className="w-14 h-14 rounded-lg object-cover" loading="lazy" />
+            ) : (
+              <span className="text-3xl">{product.image_emoji || '🍎'}</span>
+            )}
+            <div className="flex-1">
+              <h3 className="font-bold text-gray-800">{product.name_he}</h3>
+              <p className="text-sm text-gray-500">{(product.price || 0).toFixed(2)}₪ {product.unit === 'kg' ? 'לק"ג' : 'ליחידה'}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => updateQuantity(product.id, quantity - (product.unit === 'kg' ? 0.5 : 1))} className="qty-btn bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600">-</button>
+              <span className="w-12 text-center font-bold">{quantity}{product.unit === 'kg' ? ' ק"ג' : ''}</span>
+              <button onClick={() => updateQuantity(product.id, quantity + (product.unit === 'kg' ? 0.5 : 1))} className="qty-btn bg-gray-100 hover:bg-green-100 text-gray-600 hover:text-green-600">+</button>
+            </div>
+            <div className="text-left min-w-20"><div className="font-bold text-green-700">{((product.price || 0) * quantity).toFixed(2)}₪</div></div>
+            <button onClick={() => removeItem(product.id)} className="text-red-400 hover:text-red-600 text-lg">✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl p-6 shadow-sm">
+        <div className="flex justify-between mb-2"><span className="text-gray-600">סה"כ מוצרים</span><span className="font-bold">{totalPrice.toFixed(2)}₪</span></div>
+        <hr className="my-3" />
+        <div className="flex justify-between text-lg"><span className="font-bold">סה"כ</span><span className="font-bold text-green-700">{totalPrice.toFixed(2)}₪</span></div>
+        {totalPrice < minOrder && (
+          <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-sm">⚠️ הזמנה מינימלית: {minOrder}₪ (חסרים {(minOrder - totalPrice).toFixed(2)}₪)</div>
+        )}
+        <div className="flex gap-3 mt-4">
+          <button onClick={() => setPage('shop')} className="flex-1 border border-green-600 text-green-700 py-3 rounded-xl font-bold hover:bg-green-50 transition">המשך קניות</button>
+          <button onClick={() => totalPrice >= minOrder && setPage('checkout')} disabled={totalPrice < minOrder} className={`flex-1 py-3 rounded-xl font-bold transition ${totalPrice >= minOrder ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>לצ'קאאוט →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== CHECKOUT ====================
+function CheckoutPage() {
+  const { items, totalPrice, clearCart, showToast } = useCart();
+  const { setPage } = useContext(PageContext);
+  const { settings, dbConnected } = useData();
+  const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ name: '', phone: '', email: '', deliveryType: 'pickup', address: '', floor: '', apartment: '', notes: '' });
+  const [orderPlaced, setOrderPlaced] = useState(false);
+  const [orderNumber, setOrderNumber] = useState(null);
+
+  const fee = parseFloat(settings.delivery_fee) || 15;
+  const deliveryTotal = form.deliveryType === 'delivery' ? fee : 0;
+  const grandTotal = totalPrice + deliveryTotal;
+
+  const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const placeOrder = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+
+    try {
+      if (dbConnected) {
+        // Save order to Supabase
+        const { data: order, error: orderErr } = await supabase
+          .from('orders')
+          .insert({
+            customer_name: form.name,
+            customer_phone: form.phone,
+            customer_email: form.email || null,
+            delivery_type: form.deliveryType,
+            delivery_address: form.deliveryType === 'delivery' ? form.address : null,
+            delivery_floor: form.floor || null,
+            delivery_apartment: form.apartment || null,
+            total_amount: grandTotal,
+            delivery_fee: deliveryTotal,
+            status: 'pending',
+            payment_status: 'unpaid',
+            notes: form.notes || null,
+          })
+          .select()
+          .single();
+
+        if (orderErr) throw orderErr;
+
+        // Save order items
+        const orderItems = items.map(({ product, quantity }) => ({
+          order_id: order.id,
+          product_id: product.id,
+          product_name_he: product.name_he,
+          quantity: quantity,
+          unit_type: product.unit,
+          price_at_purchase: product.price || 0,
+        }));
+
+        const { error: itemsErr } = await supabase
+          .from('order_items')
+          .insert(orderItems);
+
+        if (itemsErr) throw itemsErr;
+
+        setOrderNumber(order.order_number);
+      } else {
+        // Fallback - random number
+        setOrderNumber(Math.floor(1000 + Math.random() * 9000));
+      }
+
+      setOrderPlaced(true);
+      clearCart();
+    } catch (err) {
+      console.error('Order error:', err);
+      showToast('שגיאה בשליחת ההזמנה: ' + err.message);
+    }
+    setSubmitting(false);
+  };
+
+  if (orderPlaced) {
+    return (
+      <div className="fade-in max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="bg-white rounded-2xl p-8 shadow-sm">
+          <div className="text-6xl mb-4">🎉</div>
+          <h2 className="text-2xl font-bold text-green-700 mb-2">ההזמנה התקבלה!</h2>
+          <p className="text-gray-600 mb-4">מספר הזמנה: <span className="font-bold text-2xl">#{orderNumber}</span></p>
+          <div className="bg-green-50 rounded-xl p-4 mb-6 text-right">
+            <p className="text-sm text-green-800 mb-1">👤 {form.name} | 📱 {form.phone}</p>
+            <p className="text-sm text-green-800 mb-1">{form.deliveryType === 'pickup' ? '📍 איסוף עצמי' : '🚗 משלוח ל: ' + form.address}</p>
+            <p className="text-sm text-green-800">💰 סה"כ: {grandTotal.toFixed(2)}₪</p>
+          </div>
+          {dbConnected && <p className="text-xs text-gray-400 mb-4">✅ ההזמנה נשמרה במערכת - תקבל עדכון כשהיא תאושר</p>}
+          <button onClick={() => setPage('home')} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition">חזרה לדף הבית</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-in max-w-3xl mx-auto px-4 py-6">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">💳 צ'קאאוט</h2>
+      <div className="flex items-center justify-center gap-2 mb-8">
+        {[1, 2, 3].map(s => (
+          <React.Fragment key={s}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step >= s ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>{s}</div>
+            {s < 3 && <div className={`w-12 h-1 rounded ${step > s ? 'bg-green-600' : 'bg-gray-200'}`}></div>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {step === 1 && (
+        <div className="bg-white rounded-xl p-6 shadow-sm fade-in">
+          <h3 className="font-bold text-lg mb-4">פרטים אישיים</h3>
+          <div className="space-y-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">שם מלא *</label><input type="text" value={form.name} onChange={e => handleChange('name', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-gray-200" placeholder="הכנס שם מלא" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">טלפון *</label><input type="tel" value={form.phone} onChange={e => handleChange('phone', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-gray-200" placeholder="050-0000000" dir="ltr" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">אימייל</label><input type="email" value={form.email} onChange={e => handleChange('email', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-gray-200" placeholder="your@email.com" dir="ltr" /></div>
+          </div>
+          <button onClick={() => form.name && form.phone && setStep(2)} disabled={!form.name || !form.phone} className={`w-full mt-6 py-3 rounded-xl font-bold transition ${form.name && form.phone ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>המשך →</button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="bg-white rounded-xl p-6 shadow-sm fade-in">
+          <h3 className="font-bold text-lg mb-4">סוג איסוף/משלוח</h3>
+          <div className="space-y-3 mb-6">
+            <button onClick={() => handleChange('deliveryType', 'pickup')} className={`w-full p-4 rounded-xl border-2 text-right transition ${form.deliveryType === 'pickup' ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}>
+              <div className="font-bold text-lg">📍 איסוף עצמי - חינם</div>
+              <div className="text-sm text-gray-500 mt-1">{settings.store_address}</div>
+            </button>
+            <button onClick={() => handleChange('deliveryType', 'delivery')} className={`w-full p-4 rounded-xl border-2 text-right transition ${form.deliveryType === 'delivery' ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}>
+              <div className="font-bold text-lg">🚗 משלוח עד הבית - {fee}₪</div>
+              <div className="text-sm text-gray-500 mt-1">{settings.delivery_area}</div>
+            </button>
+          </div>
+          {form.deliveryType === 'delivery' && (
+            <div className="space-y-4 mb-6 bg-gray-50 rounded-xl p-4">
+              <input type="text" value={form.address} onChange={e => handleChange('address', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white" placeholder="רחוב ומספר בית" />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" value={form.floor} onChange={e => handleChange('floor', e.target.value)} className="px-4 py-3 rounded-lg border border-gray-200 bg-white" placeholder="קומה" />
+                <input type="text" value={form.apartment} onChange={e => handleChange('apartment', e.target.value)} className="px-4 py-3 rounded-lg border border-gray-200 bg-white" placeholder="דירה" />
+              </div>
+            </div>
+          )}
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">הערות</label><textarea value={form.notes} onChange={e => handleChange('notes', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-gray-200" rows="2" placeholder="הערות מיוחדות (אופציונלי)"></textarea></div>
+          <div className="flex gap-3 mt-6">
+            <button onClick={() => setStep(1)} className="flex-1 border border-gray-300 text-gray-600 py-3 rounded-xl font-bold">← חזרה</button>
+            <button onClick={() => { if (form.deliveryType === 'delivery' && !form.address) return; setStep(3); }} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition">המשך →</button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="bg-white rounded-xl p-6 shadow-sm fade-in">
+          <h3 className="font-bold text-lg mb-4">סיכום הזמנה</h3>
+          <div className="bg-gray-50 rounded-xl p-4 mb-4">
+            {items.map(({ product, quantity }) => (
+              <div key={product.id} className="flex justify-between text-sm py-1">
+                <span>{product.name_he} x {quantity}{product.unit === 'kg' ? ' ק"ג' : ''}</span>
+                <span className="font-medium">{((product.price || 0) * quantity).toFixed(2)}₪</span>
+              </div>
+            ))}
+            <hr className="my-2" />
+            {form.deliveryType === 'delivery' && <div className="flex justify-between text-sm"><span>משלוח</span><span>{fee.toFixed(2)}₪</span></div>}
+            <div className="flex justify-between font-bold text-lg mt-2 text-green-700"><span>סה"כ לתשלום</span><span>{grandTotal.toFixed(2)}₪</span></div>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm">
+            <p>👤 {form.name} | 📱 {form.phone}</p>
+            <p>{form.deliveryType === 'pickup' ? '📍 איסוף עצמי' : '🚗 משלוח ל: ' + form.address + ', בית שמש'}</p>
+            {form.notes && <p className="mt-1 text-gray-500">📝 {form.notes}</p>}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-600 py-3 rounded-xl font-bold">← חזרה</button>
+            <button onClick={placeOrder} disabled={submitting} className={`flex-1 py-4 rounded-xl font-bold text-lg transition ${submitting ? 'bg-gray-400 text-white' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+              {submitting ? '⏳ שולח...' : '✅ אשר הזמנה'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== ABOUT ====================
+function AboutPage() {
+  const { settings } = useData();
+  return (
+    <div className="fade-in max-w-3xl mx-auto px-4 py-12">
+      <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
+        <div className="text-5xl mb-3">🍎🥬🍊</div>
+        <h2 className="text-3xl font-bold text-green-800">ברכת השדה</h2>
+        <p className="text-gray-500 mt-2 mb-6">פירות וירקות טריים מהשדה אליכם</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
+          <div className="bg-green-50 rounded-xl p-6"><h3 className="font-bold text-green-800 mb-2">📍 כתובת</h3><p>{settings.store_address}</p><p className="mt-2">📱 {settings.store_phone}</p></div>
+          <div className="bg-green-50 rounded-xl p-6"><h3 className="font-bold text-green-800 mb-2">🕐 שעות</h3><p>{settings.ordering_start_hour} - {settings.ordering_end_hour}</p></div>
+          <div className="bg-green-50 rounded-xl p-6"><h3 className="font-bold text-green-800 mb-2">🚗 משלוחים</h3><p>{settings.delivery_area}</p><p>עמלת משלוח: {settings.delivery_fee}₪</p></div>
+          <div className="bg-green-50 rounded-xl p-6"><h3 className="font-bold text-green-800 mb-2">📍 איסוף</h3><p>ניתן לאסוף מהחנות ללא עלות</p></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== FOOTER ====================
+function Footer() {
+  const { settings } = useData();
+  return (
+    <footer className="bg-gray-800 text-white py-8 mt-12">
+      <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div><h3 className="font-bold text-lg mb-3">ברכת השדה</h3><p className="text-gray-400 text-sm">{settings.store_address}</p></div>
+        <div><h3 className="font-bold text-lg mb-3">יצירת קשר</h3><p className="text-gray-400 text-sm">📱 {settings.store_phone}</p></div>
+        <div><h3 className="font-bold text-lg mb-3">מידע</h3><p className="text-gray-400 text-sm">הזמנה מינימלית: {settings.min_order_amount}₪ | משלוח: {settings.delivery_fee}₪</p></div>
+      </div>
+      <div className="text-center text-gray-500 text-xs mt-6 pt-6 border-t border-gray-700">&copy; {new Date().getFullYear()} ברכת השדה</div>
+    </footer>
+  );
+}
+
+// ==================== APP ====================
+function App() {
+  const [page, setPageState] = useState('home');
+  const [shopCat, setShopCat] = useState(null);
+  const setPage = (p, cat = null) => { setPageState(p); setShopCat(cat); window.scrollTo(0, 0); };
+
+  return (
+    <DataProvider>
+      <CartProvider>
+        <PageContext.Provider value={{ page, setPage }}>
+          <Toasts />
+          <Header />
+          <StoreStatusBanner />
+          <main style={{ minHeight: '60vh' }}>
+            {page === 'home' && <HomePage />}
+            {page === 'shop' && <ShopPage initialCategory={shopCat} />}
+            {page === 'cart' && <CartPage />}
+            {page === 'checkout' && <CheckoutPage />}
+            {page === 'about' && <AboutPage />}
+          </main>
+          <Footer />
+        </PageContext.Provider>
+      </CartProvider>
+    </DataProvider>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>
