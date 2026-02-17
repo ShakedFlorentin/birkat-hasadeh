@@ -18,16 +18,31 @@
     .sidebar-link:hover, .sidebar-link.active { background: rgba(255,255,255,0.15); }
     .stat-card { transition: all 0.3s; }
     .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
-    .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .fade-in { animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     input:focus, select:focus, textarea:focus { outline: none; border-color: #4a7c23; box-shadow: 0 0 0 3px rgba(74,124,35,0.1); }
-    .toggle-switch { position: relative; width: 56px; height: 28px; background: #d1d5db; border-radius: 14px; cursor: pointer; transition: 0.3s; }
+    .toggle-switch { position: relative; width: 56px; height: 28px; background: #d1d5db; border-radius: 14px; cursor: pointer; transition: 0.3s; flex-shrink: 0; }
     .toggle-switch.active { background: #4a7c23; }
     .toggle-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; background: white; border-radius: 50%; transition: 0.3s; }
     .toggle-switch.active::after { right: 30px; }
     .order-row:hover { background: #f9fafb; }
     .price-input { width: 100px; }
+    /* Mobile sidebar overlay */
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+    .sidebar-overlay.active { display: block; }
+    /* Notification toast */
+    .notification-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; animation: slideDown 0.4s ease, fadeOut 0.4s ease 5.6s forwards; max-width: 90vw; }
+    @keyframes slideDown { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    /* Mobile top bar */
+    .mobile-topbar { display: none; }
+    @media (max-width: 768px) {
+      .mobile-topbar { display: flex; position: fixed; top: 0; right: 0; left: 0; height: 56px; background: #276749; color: white; align-items: center; padding: 0 16px; z-index: 30; gap: 12px; }
+      .desktop-sidebar { transform: translateX(100%); transition: transform 0.3s ease; z-index: 50; }
+      .desktop-sidebar.open { transform: translateX(0); }
+      .main-content { margin-right: 0 !important; padding-top: 72px !important; }
+    }
     @media print {
       .no-print { display: none !important; }
       .print-only { display: block !important; }
@@ -186,7 +201,7 @@ function LoginPage({ onLogin }) {
 }
 
 // ==================== SIDEBAR ====================
-function Sidebar({ activePage, setPage, user, onLogout }) {
+function Sidebar({ activePage, setPage, user, onLogout, isOpen, onClose }) {
   const links = [
     { id: 'dashboard', label: 'דשבורד', icon: '📊' },
     { id: 'orders', label: 'הזמנות', icon: '📋' },
@@ -195,40 +210,47 @@ function Sidebar({ activePage, setPage, user, onLogout }) {
     { id: 'settings', label: 'הגדרות', icon: '⚙️' },
   ];
 
+  const handlePageClick = (id) => {
+    setPage(id);
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className="w-64 bg-green-800 text-white min-h-screen fixed right-0 top-0 flex flex-col">
-      <div className="p-6 border-b border-green-700">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold">ב</div>
-          <div>
-            <h2 className="font-bold">ברכת השדה</h2>
-            <p className="text-xs text-green-300">פאנל ניהול</p>
+    <>
+      <div className={`sidebar-overlay ${isOpen ? 'active' : ''}`} onClick={onClose}></div>
+      <aside className={`desktop-sidebar w-64 bg-green-800 text-white min-h-screen fixed right-0 top-0 flex flex-col ${isOpen ? 'open' : ''}`}>
+        <div className="p-6 border-b border-green-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold">ב</div>
+            <div>
+              <h2 className="font-bold">ברכת השדה</h2>
+              <p className="text-xs text-green-300">פאנל ניהול</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <nav className="flex-1 py-4">
-        {links.map(link => (
-          <button
-            key={link.id}
-            onClick={() => setPage(link.id)}
-            className={`sidebar-link w-full text-right px-6 py-3 flex items-center gap-3 ${activePage === link.id ? 'active bg-green-700' : ''}`}
-          >
-            <span>{link.icon}</span>
-            <span className="font-medium">{link.label}</span>
-          </button>
-        ))}
-      </nav>
+        <nav className="flex-1 py-4">
+          {links.map(link => (
+            <button
+              key={link.id}
+              onClick={() => handlePageClick(link.id)}
+              className={`sidebar-link w-full text-right px-6 py-3 flex items-center gap-3 ${activePage === link.id ? 'active bg-green-700' : ''}`}
+            >
+              <span>{link.icon}</span>
+              <span className="font-medium">{link.label}</span>
+            </button>
+          ))}
+        </nav>
 
-      <div className="p-4 border-t border-green-700">
-        <div className="text-sm mb-2">👤 {user.name}</div>
-        <div className="flex gap-2">
-          <a href="index.html" className="text-xs text-green-300 hover:text-white">צפה באתר →</a>
-
-          <button onClick={onLogout} className="text-xs text-red-300 hover:text-red-100 mr-auto">התנתק</button>
+        <div className="p-4 border-t border-green-700">
+          <div className="text-sm mb-2">👤 {user.name}</div>
+          <div className="flex gap-2">
+            <a href="index.html" className="text-xs text-green-300 hover:text-white">צפה באתר →</a>
+            <button onClick={onLogout} className="text-xs text-red-300 hover:text-red-100 mr-auto">התנתק</button>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -242,7 +264,7 @@ function DashboardPage({ orders, settings }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">דשבורד</h1>
           <p className="text-gray-500 text-sm">{today}</p>
@@ -367,8 +389,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       <div className="fade-in">
         <button onClick={() => setSelectedOrder(null)} className="text-green-700 font-medium mb-4 hover:underline">← חזרה לרשימה</button>
 
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-bold">הזמנה #{selectedOrder.orderNumber}</h2>
             <span className={`status-badge ${STATUS_MAP[selectedOrder.status].color}`}>
               {STATUS_MAP[selectedOrder.status].icon} {STATUS_MAP[selectedOrder.status].label}
@@ -397,7 +419,7 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
           )}
 
           <h3 className="font-bold text-gray-700 mb-2">פריטים</h3>
-          <div className="bg-gray-50 rounded-lg overflow-hidden mb-4">
+          <div className="bg-gray-50 rounded-lg overflow-x-auto mb-4">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
@@ -452,9 +474,9 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">📋 ניהול הזמנות</h1>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 חיפוש לפי שם, טלפון או מספר הזמנה" className="px-4 py-2 rounded-lg border border-gray-200 bg-white w-64" />
-        <div className="flex gap-2">
+      <div className="space-y-3 mb-4">
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 חיפוש לפי שם, טלפון או מספר הזמנה" className="px-4 py-2 rounded-lg border border-gray-200 bg-white w-full sm:w-64" />
+        <div className="flex gap-2 flex-wrap">
           {['all', 'pending', 'confirmed', 'ready', 'completed', 'cancelled'].map(s => (
             <button key={s} onClick={() => setFilter(s)} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === s ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
               {s === 'all' ? 'הכל' : STATUS_MAP[s].icon + ' ' + STATUS_MAP[s].label}
@@ -464,8 +486,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       </div>
 
       {/* Orders table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-max">
           <thead className="bg-gray-50">
             <tr>
               <th className="py-3 px-4 text-right font-medium text-gray-600">מס׳</th>
@@ -564,14 +586,14 @@ function PricingPage({ products, setProducts, dbConnected }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">💰 עדכון מחירים יומי</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">💰 עדכון מחירים יומי</h1>
           <p className="text-gray-500 text-sm">עדכון אחרון: {new Date().toLocaleDateString('he-IL')} | {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</p>
         </div>
         <button
           onClick={saveAllPrices}
-          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition"
+          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition w-full sm:w-auto"
         >
           💾 שמור את כל המחירים
         </button>
@@ -591,8 +613,8 @@ function PricingPage({ products, setProducts, dbConnected }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-max">
           <thead className="bg-gray-50">
             <tr>
               <th className="py-3 px-4 text-right font-medium text-gray-600"></th>
@@ -722,9 +744,9 @@ function ProductsPage({ products, setProducts, dbConnected }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">📦 ניהול מוצרים</h1>
-        <button onClick={startNew} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700">+ הוסף מוצר</button>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">📦 ניהול מוצרים</h1>
+        <button onClick={startNew} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 w-full sm:w-auto">+ הוסף מוצר</button>
       </div>
 
       {/* Product form modal */}
@@ -877,7 +899,7 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
             ></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">שעת פתיחה</label>
               <input type="time" value={settings.orderingStartHour} onChange={e => handleChange('orderingStartHour', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" />
@@ -903,7 +925,7 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
             <div className={`toggle-switch ${settings.pickupEnabled ? 'active' : ''}`} onClick={() => handleChange('pickupEnabled', !settings.pickupEnabled)}></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">עמלת משלוח (₪)</label>
               <input type="number" value={settings.deliveryFee} onChange={e => handleChange('deliveryFee', parseFloat(e.target.value) || 0)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" />
@@ -957,14 +979,37 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
   );
 }
 
+// ==================== NOTIFICATION SOUND ====================
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3);
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.3);
+    });
+  } catch (e) { console.log('Audio not supported'); }
+}
+
 // ==================== MAIN APP ====================
 function AdminApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [dbConnected, setDbConnected] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const knownOrderIdsRef = React.useRef(null);
   const [settings, setSettings] = useState({
     orderingOpen: true,
     orderingStartHour: '07:00',
@@ -1018,6 +1063,24 @@ function AdminApp() {
         notes: o.notes || '',
         createdAt: new Date(o.created_at),
       }));
+
+      // Detect new orders
+      if (knownOrderIdsRef.current !== null) {
+        const newOrders = mappedOrders.filter(o => !knownOrderIdsRef.current.has(o.id));
+        if (newOrders.length > 0) {
+          playNotificationSound();
+          newOrders.forEach(o => {
+            const notif = { id: Date.now() + '-' + o.id, orderNumber: o.orderNumber, customerName: o.customerName, total: o.total };
+            setNotifications(prev => [...prev, notif]);
+            setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== notif.id)), 6000);
+            // Browser notification
+            if (Notification.permission === 'granted') {
+              new Notification('הזמנה חדשה!', { body: `#${o.orderNumber} - ${o.customerName} | ${o.total.toFixed(2)}₪`, icon: '🛒' });
+            }
+          });
+        }
+      }
+      knownOrderIdsRef.current = new Set(mappedOrders.map(o => o.id));
 
       setOrders(mappedOrders);
 
@@ -1077,6 +1140,10 @@ function AdminApp() {
   const handleLogin = (userData) => {
     setUser(userData);
     setLoggedIn(true);
+    // Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   };
 
   // Update order status in Supabase
@@ -1095,10 +1162,30 @@ function AdminApp() {
 
   if (!loggedIn) return <LoginPage onLogin={handleLogin} />;
 
+  const PAGE_TITLES = { dashboard: 'דשבורד', orders: 'הזמנות', pricing: 'מחירים', products: 'מוצרים', settings: 'הגדרות' };
+
   return (
     <div className="flex">
-      <Sidebar activePage={page} setPage={setPage} user={user} onLogout={() => setLoggedIn(false)} />
-      <main className="mr-64 flex-1 p-6 min-h-screen" style={{ marginRight: '256px' }}>
+      {/* New order notifications */}
+      {notifications.map(n => (
+        <div key={n.id} className="notification-toast bg-green-600 text-white rounded-xl shadow-lg px-6 py-4 flex items-center gap-3" onClick={() => { setPage('orders'); setNotifications(prev => prev.filter(x => x.id !== n.id)); }}>
+          <span className="text-2xl">🛒</span>
+          <div>
+            <div className="font-bold">הזמנה חדשה!</div>
+            <div className="text-sm">#{n.orderNumber} - {n.customerName} | {n.total.toFixed(2)}₪</div>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); setNotifications(prev => prev.filter(x => x.id !== n.id)); }} className="mr-2 text-white text-xl leading-none hover:opacity-70">&times;</button>
+        </div>
+      ))}
+
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button onClick={() => setSidebarOpen(true)} className="text-2xl leading-none p-1">☰</button>
+        <span className="font-bold text-lg">{PAGE_TITLES[page]}</span>
+      </div>
+
+      <Sidebar activePage={page} setPage={setPage} user={user} onLogout={() => setLoggedIn(false)} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <main className="main-content flex-1 p-4 sm:p-6 min-h-screen" style={{ marginRight: '256px' }}>
         {!dbConnected && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-yellow-800 text-sm">
             ⚠️ לא מחובר ל-Supabase - מציג נתוני דמו. הרץ את קבצי ה-SQL כדי לחבר לבסיס הנתונים.
