@@ -40,6 +40,36 @@ RETURNS TABLE (
   ORDER BY p.sort_order, p.category, p.name_he;
 $$ LANGUAGE SQL STABLE;
 
+-- פונקציה להעתקת מחירי אתמול להיום (לשימוש אוטומטי)
+CREATE OR REPLACE FUNCTION copy_prices_to_today()
+RETURNS INTEGER AS $$
+DECLARE
+  copied INTEGER;
+BEGIN
+  INSERT INTO daily_prices (product_id, date, price_nis, stock_available)
+  SELECT product_id, CURRENT_DATE, price_nis, stock_available
+  FROM daily_prices
+  WHERE date = CURRENT_DATE - INTERVAL '1 day'
+  AND NOT EXISTS (
+    SELECT 1 FROM daily_prices dp2
+    WHERE dp2.product_id = daily_prices.product_id AND dp2.date = CURRENT_DATE
+  );
+  GET DIAGNOSTICS copied = ROW_COUNT;
+  RETURN copied;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- פונקציה לעדכון/יצירת מחיר יומי (עוקפת RLS לשימוש מהאדמין)
+CREATE OR REPLACE FUNCTION upsert_daily_price(p_product_id UUID, p_price DECIMAL, p_available BOOLEAN DEFAULT true)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO daily_prices (product_id, date, price_nis, stock_available)
+  VALUES (p_product_id, CURRENT_DATE, p_price, p_available)
+  ON CONFLICT (product_id, date)
+  DO UPDATE SET price_nis = p_price, stock_available = p_available;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- פונקציה לסטטיסטיקות דשבורד
 CREATE OR REPLACE FUNCTION get_dashboard_stats()
 RETURNS JSON AS $$

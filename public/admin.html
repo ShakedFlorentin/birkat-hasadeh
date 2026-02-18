@@ -543,7 +543,7 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
 }
 
 // ==================== PRICING PAGE ====================
-function PricingPage({ products, setProducts, dbConnected }) {
+function PricingPage({ products, setProducts, dbConnected, wholesaleStatus, onFetchWholesale }) {
   const [editPrices, setEditPrices] = useState({});
   const [saved, setSaved] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -563,18 +563,12 @@ function PricingPage({ products, setProducts, dbConnected }) {
   const saveAllPrices = async () => {
     setProducts(prev => prev.map(p => ({ ...p, price: editPrices[p.id] || p.price })));
 
-    // Save to Supabase
+    // Save to Supabase via RPC function (bypasses RLS)
     if (sb && dbConnected) {
-      const today = new Date().toISOString().split('T')[0];
       for (const p of products) {
         const newPrice = editPrices[p.id];
         if (newPrice && newPrice > 0) {
-          await sb.from('daily_prices').upsert({
-            product_id: p.id,
-            date: today,
-            price_nis: newPrice,
-            stock_available: p.active !== false,
-          }, { onConflict: 'product_id,date' });
+          await sb.rpc('upsert_daily_price', { p_product_id: p.id, p_price: newPrice, p_available: p.active !== false });
         }
       }
     }
@@ -670,11 +664,30 @@ function PricingPage({ products, setProducts, dbConnected }) {
         </table>
       </div>
 
-      {/* CSV Upload hint */}
+      {/* Wholesale price fetch */}
       <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <h3 className="font-bold text-blue-800 mb-2">📄 העלאת מחירים מקובץ CSV</h3>
-        <p className="text-sm text-blue-600">בגרסה המלאה - ניתן להעלות קובץ CSV עם מחירים יומיים מהמחירון הרשמי של plants.moonsite.co.il</p>
-        <p className="text-xs text-blue-500 mt-1">פורמט: שם_מוצר, מחיר, זמין (כן/לא)</p>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 className="font-bold text-blue-800">🏪 מחירים סיטונאיים - מועצת הצמחים</h3>
+            <p className="text-sm text-blue-600">מתעדכן אוטומטית כל יום ב-07:30 | עדיפות: מובחר ← סוג א׳</p>
+          </div>
+          <button
+            onClick={onFetchWholesale}
+            disabled={wholesaleStatus.loading}
+            className={`${wholesaleStatus.loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-2 rounded-lg font-bold text-sm transition whitespace-nowrap`}
+          >
+            {wholesaleStatus.loading ? '⏳ מעדכן...' : '🔄 עדכן מחירים עכשיו'}
+          </button>
+        </div>
+        {wholesaleStatus.lastFetch && (
+          <p className="text-xs text-green-700 bg-green-50 rounded p-2 mt-2">
+            ✅ עודכנו {wholesaleStatus.count} מוצרים | {wholesaleStatus.lastFetch.toLocaleString('he-IL')}
+          </p>
+        )}
+        {wholesaleStatus.error && (
+          <p className="text-xs text-red-700 bg-red-50 rounded p-2 mt-2">❌ {wholesaleStatus.error}</p>
+        )}
+        <p className="text-xs text-blue-400 mt-2">מקור: plants.moonsite.co.il | ירקות בלבד (פירות, עשבי תיבול וחומרי גלם יש לעדכן ידנית)</p>
       </div>
     </div>
   );
@@ -1125,6 +1138,109 @@ async function sendWhatsAppNotification(order, settings) {
   }
 }
 
+// ==================== WHOLESALE PRICE FETCHING ====================
+// Map store product names → wholesale product name keywords
+const WHOLESALE_MAP = {
+  'עגבניות': ['עגבניות', 'עגבניות אשכולות'],
+  'עגבניות שרי': ['עגבניות שרי'],
+  'מלפפונים': ['מלפפון'],
+  'פלפל אדום': ['פלפל אדום'],
+  'פלפל ירוק': ['פלפל ירוק'],
+  'פלפל צהוב': ['פלפל צהוב'],
+  'פלפל כתום': ['פלפל כתום'],
+  'חסה': ['חסה'],
+  'גזר': ['גזר'],
+  'בצל יבש': ['בצל יבש'],
+  'בצל ירוק': ['בצל ירוק'],
+  'תפוח אדמה': ['תפוח אדמה', 'תפו"א'],
+  'חציל': ['חציל', 'חצילים'],
+  'קישוא': ['זוקיני', 'קישואים'],
+  'כרובית': ['כרובית'],
+  'ברוקולי': ['ברוקולי'],
+  'בטטה': ['בטטות'],
+  'כרוב': ['כרוב לבן'],
+  'כרוב אדום': ['כרוב אדום'],
+  'שעועית': ['שעועית'],
+  'תירס': ['תירס'],
+  'אבטיח': ['אבטיח'],
+  'דלעת': ['דלעת'],
+  'שום': ['שום'],
+  'סלק': ['סלק'],
+  'מלון': ['מלון'],
+};
+
+async function fetchWholesalePrices() {
+  const url = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://plants.moonsite.co.il');
+  const res = await fetch(url);
+  const data = await res.json();
+  const html = data.contents;
+
+  // Parse the HTML text content for price rows
+  // The page contains rows with: date | product name | סוג א price | מובחר price
+  const prices = {};
+
+  // Extract text between table-like patterns
+  // Look for patterns: product name followed by numbers (prices)
+  const lines = html.replace(/<[^>]+>/g, '\n').split('\n').map(l => l.trim()).filter(l => l);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Check if this line matches a known wholesale product
+    for (const [storeName, keywords] of Object.entries(WHOLESALE_MAP)) {
+      for (const keyword of keywords) {
+        if (line.includes(keyword) && !prices[storeName]) {
+          // Look for price numbers nearby (next few lines)
+          const nearby = lines.slice(i, i + 8).join(' ');
+          // Extract numbers that look like prices (1-3 digits, optional decimal)
+          const priceMatches = nearby.match(/(\d{1,3}\.\d{2})/g);
+          if (priceMatches && priceMatches.length >= 1) {
+            // If 2 prices found: first is סוג א, second is מובחר
+            // Priority: מובחר first, fallback to סוג א
+            if (priceMatches.length >= 2) {
+              prices[storeName] = parseFloat(priceMatches[1]); // מובחר
+            } else {
+              prices[storeName] = parseFloat(priceMatches[0]); // סוג א
+            }
+          }
+        }
+      }
+    }
+  }
+  return prices;
+}
+
+async function applyWholesalePrices(products, setProducts, setEditPrices, dbConnected) {
+  const wholesale = await fetchWholesalePrices();
+  const updated = {};
+  let count = 0;
+
+  products.forEach(p => {
+    if (wholesale[p.name]) {
+      updated[p.id] = wholesale[p.name];
+      count++;
+    }
+  });
+
+  if (count > 0) {
+    // Update edit prices in PricingPage
+    if (setEditPrices) {
+      setEditPrices(prev => ({ ...prev, ...updated }));
+    }
+
+    // Update products state
+    setProducts(prev => prev.map(p => updated[p.id] ? { ...p, price: updated[p.id] } : p));
+
+    // Save to Supabase via RPC function (bypasses RLS)
+    if (sb && dbConnected) {
+      for (const [productId, price] of Object.entries(updated)) {
+        await sb.rpc('upsert_daily_price', { p_product_id: productId, p_price: price, p_available: true });
+      }
+    }
+  }
+
+  return { count, prices: wholesale };
+}
+
 // ==================== MAIN APP ====================
 function AdminApp() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -1135,8 +1251,10 @@ function AdminApp() {
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [dbConnected, setDbConnected] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [wholesaleStatus, setWholesaleStatus] = useState({ lastFetch: null, count: 0, loading: false, error: '' });
   const knownOrderIdsRef = React.useRef(null);
   const settingsRef = React.useRef(null);
+  const wholesaleFetchedTodayRef = React.useRef(false);
   const [settings, setSettings] = useState({
     orderingOpen: true,
     orderingStartHour: '07:00',
@@ -1290,6 +1408,44 @@ function AdminApp() {
     return () => clearInterval(interval);
   }, [loggedIn, dbConnected]);
 
+  // Wholesale price fetch wrapper
+  const triggerWholesaleFetch = useCallback(async () => {
+    setWholesaleStatus(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const result = await applyWholesalePrices(products, setProducts, null, dbConnected);
+      setWholesaleStatus({ lastFetch: new Date(), count: result.count, loading: false, error: '' });
+      wholesaleFetchedTodayRef.current = true;
+      console.log(`Wholesale prices updated: ${result.count} products`);
+    } catch (err) {
+      console.error('Wholesale fetch failed:', err);
+      setWholesaleStatus(prev => ({ ...prev, loading: false, error: 'שגיאה בעדכון מחירים סיטונאיים' }));
+    }
+  }, [products, dbConnected]);
+
+  // Auto-fetch wholesale prices at 7:30 AM daily
+  useEffect(() => {
+    if (!loggedIn) return;
+    const checkSchedule = () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      if (hour === 7 && minute >= 30 && minute <= 32 && !wholesaleFetchedTodayRef.current) {
+        triggerWholesaleFetch();
+      }
+      // Reset flag at midnight
+      if (hour === 0 && minute === 0) {
+        wholesaleFetchedTodayRef.current = false;
+      }
+    };
+    // Also try fetching on load if after 7:30 and not yet fetched today
+    const now = new Date();
+    if ((now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() >= 30)) && !wholesaleFetchedTodayRef.current) {
+      triggerWholesaleFetch();
+    }
+    const interval = setInterval(checkSchedule, 60000); // check every minute
+    return () => clearInterval(interval);
+  }, [loggedIn, triggerWholesaleFetch]);
+
   const handleLogin = (userData) => {
     setUser(userData);
     setLoggedIn(true);
@@ -1352,7 +1508,7 @@ function AdminApp() {
         )}
         {page === 'dashboard' && <DashboardPage orders={orders} settings={settings} />}
         {page === 'orders' && <OrdersPage orders={orders} setOrders={setOrders} updateStatusDB={updateOrderStatusDB} dbConnected={dbConnected} />}
-        {page === 'pricing' && <PricingPage products={products} setProducts={setProducts} dbConnected={dbConnected} />}
+        {page === 'pricing' && <PricingPage products={products} setProducts={setProducts} dbConnected={dbConnected} wholesaleStatus={wholesaleStatus} onFetchWholesale={triggerWholesaleFetch} />}
         {page === 'products' && <ProductsPage products={products} setProducts={setProducts} dbConnected={dbConnected} />}
         {page === 'settings' && <SettingsPage settings={settings} setSettings={setSettings} dbConnected={dbConnected} />}
       </main>
