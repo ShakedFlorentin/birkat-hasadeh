@@ -84,19 +84,41 @@ function DataProvider({ children }) {
 
       // Load today's prices
       const today = new Date().toISOString().split('T')[0];
-      const { data: prices } = await supabase
+      const { data: todayPrices } = await supabase
         .from('daily_prices')
         .select('*')
-        .eq('date', today)
-        .eq('stock_available', true);
+        .eq('date', today);
 
-      // Merge products with prices
-      const priceMap = {};
-      if (prices) prices.forEach(p => { priceMap[p.product_id] = p.price_nis; });
+      // Build today's price map and track explicitly unavailable products
+      const todayPriceMap = {};
+      const unavailableSet = new Set();
+      if (todayPrices) todayPrices.forEach(p => {
+        if (p.stock_available) {
+          todayPriceMap[p.product_id] = parseFloat(p.price_nis);
+        } else {
+          unavailableSet.add(p.product_id);
+        }
+      });
 
+      // For products without today's price, fetch the most recent price
+      const missingIds = (prods || []).filter(p => !todayPriceMap[p.id] && !unavailableSet.has(p.id)).map(p => p.id);
+      const latestPriceMap = {};
+      if (missingIds.length > 0) {
+        const { data: latestPrices } = await supabase
+          .from('daily_prices')
+          .select('*')
+          .in('product_id', missingIds)
+          .eq('stock_available', true)
+          .order('date', { ascending: false });
+        if (latestPrices) latestPrices.forEach(p => {
+          if (!latestPriceMap[p.product_id]) latestPriceMap[p.product_id] = parseFloat(p.price_nis);
+        });
+      }
+
+      // Merge products with prices (today > latest > null)
       const merged = (prods || []).map(p => ({
         ...p,
-        price: priceMap[p.id] || null,
+        price: unavailableSet.has(p.id) ? null : (todayPriceMap[p.id] || latestPriceMap[p.id] || null),
       }));
 
       setProducts(merged);
@@ -107,7 +129,7 @@ function DataProvider({ children }) {
       if (sets && sets.length > 0) {
         const settingsObj = {};
         sets.forEach(s => { settingsObj[s.setting_key] = s.setting_value; });
-        setSettings(settingsObj);
+        setSettings(prev => ({ ...prev, ...settingsObj }));
       }
     } catch (err) {
       console.log('Supabase not ready, using fallback data:', err.message);
@@ -576,7 +598,7 @@ function CheckoutPage() {
 
       {step === 2 && (() => {
         const timeSlots = (settings.delivery_time_slots || '').split(',').map(s => s.trim()).filter(Boolean);
-        const canProceedStep2 = (form.deliveryType !== 'delivery' || form.address) && form.timeSlot;
+        const canProceedStep2 = (form.deliveryType !== 'delivery' || form.address) && (timeSlots.length === 0 || form.timeSlot);
         return (
         <div className="bg-white rounded-xl p-6 shadow-sm fade-in">
           <h3 className="font-bold text-lg mb-4">סוג איסוף/משלוח</h3>

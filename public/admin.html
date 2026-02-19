@@ -1564,11 +1564,22 @@ function AdminApp() {
 
         // Load today prices
         const today = new Date().toISOString().split('T')[0];
-        const { data: prices } = await sb.from('daily_prices').select('*').eq('date', today);
-        if (prices) {
-          const priceMap = {};
-          prices.forEach(p => { priceMap[p.product_id] = parseFloat(p.price_nis); });
-          mappedProds.forEach(p => { if (priceMap[p.id]) p.price = priceMap[p.id]; });
+        const { data: todayPrices } = await sb.from('daily_prices').select('*').eq('date', today);
+        const todayPriceMap = {};
+        if (todayPrices) {
+          todayPrices.forEach(p => { todayPriceMap[p.product_id] = parseFloat(p.price_nis); });
+          mappedProds.forEach(p => { if (todayPriceMap[p.id]) p.price = todayPriceMap[p.id]; });
+        }
+
+        // For products without today's price, fetch most recent price
+        const missingIds = mappedProds.filter(p => !todayPriceMap[p.id]).map(p => p.id);
+        if (missingIds.length > 0) {
+          const { data: latestPrices } = await sb.from('daily_prices').select('*').in('product_id', missingIds).eq('stock_available', true).order('date', { ascending: false });
+          if (latestPrices) {
+            const latestMap = {};
+            latestPrices.forEach(p => { if (!latestMap[p.product_id]) latestMap[p.product_id] = parseFloat(p.price_nis); });
+            mappedProds.forEach(p => { if (!todayPriceMap[p.id] && latestMap[p.id]) p.price = latestMap[p.id]; });
+          }
         }
         setProducts(mappedProds);
       }
