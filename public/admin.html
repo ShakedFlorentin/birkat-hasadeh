@@ -1288,38 +1288,6 @@ async function sendEmailNotification(order, settings) {
   }
 }
 
-async function sendWhatsAppNotification(order, settings) {
-  if (!settings.whatsappEnabled || !settings.twilioAccountSid || !settings.twilioAuthToken || !settings.twilioWhatsappFrom || !settings.whatsappPhone) return;
-  try {
-    const message =
-      `🛒 הזמנה חדשה #${order.orderNumber}\n` +
-      `👤 ${order.customerName}\n` +
-      `📱 ${order.phone}\n` +
-      `${order.deliveryType === 'delivery' ? '🚗 משלוח: ' + order.address : '📍 איסוף עצמי'}\n` +
-      `💰 סה"כ: ${order.total.toFixed(2)}₪\n` +
-      (order.notes ? `📝 ${order.notes}\n` : '');
-    const phone = settings.whatsappPhone.replace(/[^0-9]/g, '');
-    const fromPhone = settings.twilioWhatsappFrom.replace(/[^0-9]/g, '');
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${settings.twilioAccountSid}/Messages.json`;
-    const body = new URLSearchParams({
-      From: `whatsapp:+${fromPhone}`,
-      To: `whatsapp:+${phone}`,
-      Body: message,
-    });
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + btoa(`${settings.twilioAccountSid}:${settings.twilioAuthToken}`),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body.toString(),
-    });
-    console.log('WhatsApp notification sent via Twilio');
-  } catch (err) {
-    console.error('WhatsApp notification failed:', err);
-  }
-}
-
 // ==================== CUSTOMER WHATSAPP STATUS NOTIFICATIONS ====================
 async function sendCustomerStatusWhatsApp(order, newStatus, settings) {
   if (!settings.customerWhatsappEnabled || !settings.whatsappBusinessPhoneId || !settings.whatsappBusinessToken) return;
@@ -1567,9 +1535,8 @@ function AdminApp() {
             if (Notification.permission === 'granted') {
               new Notification('הזמנה חדשה!', { body: `#${o.orderNumber} - ${o.customerName} | ${o.total.toFixed(2)}₪`, icon: '🛒' });
             }
-            // Email & WhatsApp notifications
+            // Email notification (WhatsApp handled by DB trigger via pg_net)
             sendEmailNotification(o, currentSettings);
-            sendWhatsAppNotification(o, currentSettings);
           });
         }
       }
