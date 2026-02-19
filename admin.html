@@ -9,6 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="js/shared.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -18,16 +19,31 @@
     .sidebar-link:hover, .sidebar-link.active { background: rgba(255,255,255,0.15); }
     .stat-card { transition: all 0.3s; }
     .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
-    .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .fade-in { animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     input:focus, select:focus, textarea:focus { outline: none; border-color: #4a7c23; box-shadow: 0 0 0 3px rgba(74,124,35,0.1); }
-    .toggle-switch { position: relative; width: 56px; height: 28px; background: #d1d5db; border-radius: 14px; cursor: pointer; transition: 0.3s; }
+    .toggle-switch { position: relative; width: 56px; height: 28px; background: #d1d5db; border-radius: 14px; cursor: pointer; transition: 0.3s; flex-shrink: 0; }
     .toggle-switch.active { background: #4a7c23; }
     .toggle-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; background: white; border-radius: 50%; transition: 0.3s; }
     .toggle-switch.active::after { right: 30px; }
     .order-row:hover { background: #f9fafb; }
     .price-input { width: 100px; }
+    /* Mobile sidebar overlay */
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+    .sidebar-overlay.active { display: block; }
+    /* Notification toast */
+    .notification-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; animation: slideDown 0.4s ease, fadeOut 0.4s ease 5.6s forwards; max-width: 90vw; }
+    @keyframes slideDown { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    /* Mobile top bar */
+    .mobile-topbar { display: none; }
+    @media (max-width: 768px) {
+      .mobile-topbar { display: flex; position: fixed; top: 0; right: 0; left: 0; height: 56px; background: #276749; color: white; align-items: center; padding: 0 16px; z-index: 30; gap: 12px; }
+      .desktop-sidebar { transform: translateX(100%); transition: transform 0.3s ease; z-index: 50; }
+      .desktop-sidebar.open { transform: translateX(0); }
+      .main-content { margin-right: 0 !important; padding-top: 72px !important; }
+    }
     @media print {
       .no-print { display: none !important; }
       .print-only { display: block !important; }
@@ -66,8 +82,8 @@ const INITIAL_PRODUCTS = [
   { id: 26, name: 'פטרוזיליה', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
   { id: 27, name: 'כוסברה', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
   { id: 28, name: 'נענע', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
-  { id: 32, name: 'תפוזים', category: 'citrus', unit: 'kg', price: 6.90, active: true, image: '🍊' },
-  { id: 33, name: 'לימון', category: 'citrus', unit: 'kg', price: 7.90, active: true, image: '🍋' },
+  { id: 32, name: 'תפוזים', category: 'fruits', unit: 'kg', price: 6.90, active: true, image: '🍊' },
+  { id: 33, name: 'לימון', category: 'fruits', unit: 'kg', price: 7.90, active: true, image: '🍋' },
   { id: 37, name: 'מנגו', category: 'exotic', unit: 'kg', price: 24.90, active: true, image: '🥭' },
   { id: 38, name: 'אבוקדו', category: 'exotic', unit: 'kg', price: 19.90, active: true, image: '🥑' },
 ];
@@ -82,7 +98,7 @@ const INITIAL_ORDERS = [
       { name: 'פלפל אדום', qty: 1, unit: 'kg', price: 11.90 },
       { name: 'בננות', qty: 1, unit: 'kg', price: 9.90 },
     ],
-    total: 44.55, status: 'pending', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*15),
+    total: 44.55, status: 'pending', paymentStatus: 'paid', notes: '', timeSlot: '10:00-12:00', createdAt: new Date(Date.now() - 1000*60*15),
   },
   {
     id: 1002, orderNumber: 4522, customerName: 'שרה לוי', phone: '052-9876543', email: '',
@@ -94,7 +110,7 @@ const INITIAL_ORDERS = [
       { name: 'פטרוזיליה', qty: 1, unit: 'unit', price: 3.90 },
       { name: 'נענע', qty: 1, unit: 'unit', price: 3.90 },
     ],
-    total: 77.30, status: 'confirmed', paymentStatus: 'paid', notes: 'אני צריכה את זה עד 14:00', createdAt: new Date(Date.now() - 1000*60*45),
+    total: 77.30, status: 'confirmed', paymentStatus: 'paid', notes: 'אני צריכה את זה עד 14:00', timeSlot: '12:00-14:00', createdAt: new Date(Date.now() - 1000*60*45),
   },
   {
     id: 1003, orderNumber: 4523, customerName: 'דוד ישראלי', phone: '054-5555555', email: 'david@mail.com',
@@ -104,7 +120,7 @@ const INITIAL_ORDERS = [
       { name: 'אבוקדו', qty: 1.5, unit: 'kg', price: 19.90 },
       { name: 'לימון', qty: 1, unit: 'kg', price: 7.90 },
     ],
-    total: 87.55, status: 'ready', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*120),
+    total: 87.55, status: 'ready', paymentStatus: 'paid', notes: '', timeSlot: '16:00-18:00', createdAt: new Date(Date.now() - 1000*60*120),
   },
   {
     id: 1004, orderNumber: 4524, customerName: 'רחל מזרחי', phone: '058-7777777', email: '',
@@ -116,7 +132,7 @@ const INITIAL_ORDERS = [
       { name: 'בצל יבש', qty: 2, unit: 'kg', price: 4.90 },
       { name: 'תפוח אדמה', qty: 3, unit: 'kg', price: 5.90 },
     ],
-    total: 68.20, status: 'completed', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*240),
+    total: 68.20, status: 'completed', paymentStatus: 'paid', notes: '', timeSlot: '08:00-10:00', createdAt: new Date(Date.now() - 1000*60*240),
   },
   {
     id: 1005, orderNumber: 4525, customerName: 'אברהם גולד', phone: '053-1111111', email: 'avi@test.com',
@@ -126,7 +142,7 @@ const INITIAL_ORDERS = [
       { name: 'תפוחים חרמון', qty: 2, unit: 'kg', price: 12.90 },
       { name: 'ענבים ירוקים', qty: 1, unit: 'kg', price: 19.90 },
     ],
-    total: 80.20, status: 'pending', paymentStatus: 'paid', notes: 'בבקשה להתקשר לפני', createdAt: new Date(Date.now() - 1000*60*5),
+    total: 80.20, status: 'pending', paymentStatus: 'paid', notes: 'בבקשה להתקשר לפני', timeSlot: '14:00-16:00', createdAt: new Date(Date.now() - 1000*60*5),
   },
 ];
 
@@ -186,7 +202,7 @@ function LoginPage({ onLogin }) {
 }
 
 // ==================== SIDEBAR ====================
-function Sidebar({ activePage, setPage, user, onLogout }) {
+function Sidebar({ activePage, setPage, user, onLogout, isOpen, onClose }) {
   const links = [
     { id: 'dashboard', label: 'דשבורד', icon: '📊' },
     { id: 'orders', label: 'הזמנות', icon: '📋' },
@@ -195,40 +211,47 @@ function Sidebar({ activePage, setPage, user, onLogout }) {
     { id: 'settings', label: 'הגדרות', icon: '⚙️' },
   ];
 
+  const handlePageClick = (id) => {
+    setPage(id);
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className="w-64 bg-green-800 text-white min-h-screen fixed right-0 top-0 flex flex-col">
-      <div className="p-6 border-b border-green-700">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold">ב</div>
-          <div>
-            <h2 className="font-bold">ברכת השדה</h2>
-            <p className="text-xs text-green-300">פאנל ניהול</p>
+    <>
+      <div className={`sidebar-overlay ${isOpen ? 'active' : ''}`} onClick={onClose}></div>
+      <aside className={`desktop-sidebar w-64 bg-green-800 text-white min-h-screen fixed right-0 top-0 flex flex-col ${isOpen ? 'open' : ''}`}>
+        <div className="p-6 border-b border-green-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center font-bold">ב</div>
+            <div>
+              <h2 className="font-bold">ברכת השדה</h2>
+              <p className="text-xs text-green-300">פאנל ניהול</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <nav className="flex-1 py-4">
-        {links.map(link => (
-          <button
-            key={link.id}
-            onClick={() => setPage(link.id)}
-            className={`sidebar-link w-full text-right px-6 py-3 flex items-center gap-3 ${activePage === link.id ? 'active bg-green-700' : ''}`}
-          >
-            <span>{link.icon}</span>
-            <span className="font-medium">{link.label}</span>
-          </button>
-        ))}
-      </nav>
+        <nav className="flex-1 py-4">
+          {links.map(link => (
+            <button
+              key={link.id}
+              onClick={() => handlePageClick(link.id)}
+              className={`sidebar-link w-full text-right px-6 py-3 flex items-center gap-3 ${activePage === link.id ? 'active bg-green-700' : ''}`}
+            >
+              <span>{link.icon}</span>
+              <span className="font-medium">{link.label}</span>
+            </button>
+          ))}
+        </nav>
 
-      <div className="p-4 border-t border-green-700">
-        <div className="text-sm mb-2">👤 {user.name}</div>
-        <div className="flex gap-2">
-          <a href="index.html" className="text-xs text-green-300 hover:text-white">צפה באתר →</a>
-
-          <button onClick={onLogout} className="text-xs text-red-300 hover:text-red-100 mr-auto">התנתק</button>
+        <div className="p-4 border-t border-green-700">
+          <div className="text-sm mb-2">👤 {user.name}</div>
+          <div className="flex gap-2">
+            <a href="index.html" className="text-xs text-green-300 hover:text-white">צפה באתר →</a>
+            <button onClick={onLogout} className="text-xs text-red-300 hover:text-red-100 mr-auto">התנתק</button>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -242,7 +265,7 @@ function DashboardPage({ orders, settings }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">דשבורד</h1>
           <p className="text-gray-500 text-sm">{today}</p>
@@ -342,6 +365,78 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
   const [filter, setFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [search, setSearch] = useState('');
+  const [actualWeights, setActualWeights] = useState({});
+  const [savingWeights, setSavingWeights] = useState(false);
+
+  // Initialize actualWeights when selecting an order
+  useEffect(() => {
+    if (selectedOrder) {
+      const weights = {};
+      selectedOrder.items.forEach((item, i) => {
+        if (item.unit === 'kg') {
+          weights[i] = item.actualQty != null ? item.actualQty : '';
+        }
+      });
+      setActualWeights(weights);
+    }
+  }, [selectedOrder?.id]);
+
+  const canEditWeights = selectedOrder && (selectedOrder.status === 'confirmed' || selectedOrder.status === 'ready');
+
+  const handleWeightChange = (index, value) => {
+    const num = value === '' ? '' : parseFloat(value);
+    const item = selectedOrder.items[index];
+    const maxAllowed = item.qty * 1.2;
+    if (num !== '' && num > maxAllowed) return;
+    setActualWeights(prev => ({ ...prev, [index]: value }));
+  };
+
+  const actualTotal = selectedOrder ? selectedOrder.items.reduce((sum, item, i) => {
+    if (item.unit === 'kg' && actualWeights[i] !== undefined && actualWeights[i] !== '') {
+      return sum + parseFloat(actualWeights[i]) * item.price;
+    }
+    return sum + item.qty * item.price;
+  }, 0) : 0;
+
+  const saveActualWeights = async () => {
+    if (!dbConnected || !sb) return;
+    setSavingWeights(true);
+    try {
+      for (const [index, weight] of Object.entries(actualWeights)) {
+        const item = selectedOrder.items[parseInt(index)];
+        if (weight !== '' && item.itemId) {
+          await sb.rpc('update_order_item_actual', { p_item_id: item.itemId, p_actual_qty: parseFloat(weight) });
+        }
+      }
+      await sb.rpc('update_order_total', { p_order_id: selectedOrder.id, p_total: parseFloat(actualTotal.toFixed(2)) });
+      // Update local state
+      setOrders(prev => prev.map(o => {
+        if (o.id !== selectedOrder.id) return o;
+        const updatedItems = o.items.map((item, i) => {
+          if (actualWeights[i] !== undefined && actualWeights[i] !== '') {
+            return { ...item, actualQty: parseFloat(actualWeights[i]) };
+          }
+          return item;
+        });
+        return { ...o, items: updatedItems, total: parseFloat(actualTotal.toFixed(2)) };
+      }));
+      setSelectedOrder(prev => ({
+        ...prev,
+        total: parseFloat(actualTotal.toFixed(2)),
+        items: prev.items.map((item, i) => {
+          if (actualWeights[i] !== undefined && actualWeights[i] !== '') {
+            return { ...item, actualQty: parseFloat(actualWeights[i]) };
+          }
+          return item;
+        })
+      }));
+      alert('המשקלים נשמרו בהצלחה!');
+    } catch (err) {
+      console.error('Error saving weights:', err);
+      alert('שגיאה בשמירת המשקלים');
+    }
+    setSavingWeights(false);
+  };
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
@@ -367,8 +462,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       <div className="fade-in">
         <button onClick={() => setSelectedOrder(null)} className="text-green-700 font-medium mb-4 hover:underline">← חזרה לרשימה</button>
 
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-bold">הזמנה #{selectedOrder.orderNumber}</h2>
             <span className={`status-badge ${STATUS_MAP[selectedOrder.status].color}`}>
               {STATUS_MAP[selectedOrder.status].icon} {STATUS_MAP[selectedOrder.status].label}
@@ -385,7 +480,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
             <div>
               <h3 className="font-bold text-gray-700 mb-2">פרטי משלוח</h3>
               <p>{selectedOrder.deliveryType === 'delivery' ? '🚗 משלוח ל: ' + selectedOrder.address : '📍 איסוף עצמי'}</p>
-              <p>🕐 {selectedOrder.createdAt.toLocaleString('he-IL')}</p>
+              {selectedOrder.timeSlot && <p>🕐 חלון זמן: {selectedOrder.timeSlot}</p>}
+              <p>📅 {selectedOrder.createdAt.toLocaleString('he-IL')}</p>
               <p>💳 {selectedOrder.paymentStatus === 'paid' ? '✅ שולם' : '❌ לא שולם'}</p>
             </div>
           </div>
@@ -397,30 +493,67 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
           )}
 
           <h3 className="font-bold text-gray-700 mb-2">פריטים</h3>
-          <div className="bg-gray-50 rounded-lg overflow-hidden mb-4">
+          <div className="bg-gray-50 rounded-lg overflow-x-auto mb-4">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
                   <th className="py-2 px-4 text-right">מוצר</th>
-                  <th className="py-2 px-4 text-right">כמות</th>
+                  <th className="py-2 px-4 text-right">כמות מבוקשת</th>
+                  {canEditWeights && <th className="py-2 px-4 text-right">משקל בפועל</th>}
                   <th className="py-2 px-4 text-right">מחיר</th>
                   <th className="py-2 px-4 text-right">סה"כ</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedOrder.items.map((item, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="py-2 px-4">{item.name}</td>
-                    <td className="py-2 px-4">{item.qty} {item.unit === 'kg' ? 'ק"ג' : 'יח׳'}</td>
-                    <td className="py-2 px-4">{item.price.toFixed(2)}₪</td>
-                    <td className="py-2 px-4 font-medium">{(item.price * item.qty).toFixed(2)}₪</td>
-                  </tr>
-                ))}
+                {selectedOrder.items.map((item, i) => {
+                  const effQty = (item.unit === 'kg' && actualWeights[i] !== undefined && actualWeights[i] !== '') ? parseFloat(actualWeights[i]) : item.qty;
+                  return (
+                    <tr key={i} className="border-b">
+                      <td className="py-2 px-4">{item.name}</td>
+                      <td className="py-2 px-4">{item.qty} {item.unit === 'kg' ? 'ק"ג' : 'יח׳'}</td>
+                      {canEditWeights && (
+                        <td className="py-2 px-4">
+                          {item.unit === 'kg' ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={item.qty * 1.2}
+                                value={actualWeights[i] ?? ''}
+                                onChange={e => handleWeightChange(i, e.target.value)}
+                                className="w-20 px-2 py-1 border rounded text-sm"
+                                placeholder={item.qty.toString()}
+                              />
+                              <span className="text-xs text-gray-500">ק"ג</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="py-2 px-4">{item.price.toFixed(2)}₪</td>
+                      <td className="py-2 px-4 font-medium">{(item.price * effQty).toFixed(2)}₪</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <div className="text-left text-xl font-bold text-green-700">
-            סה"כ: {selectedOrder.total.toFixed(2)}₪
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div>
+              <div className="text-xl font-bold text-green-700">
+                {canEditWeights ? `סה"כ בפועל: ${actualTotal.toFixed(2)}₪` : `סה"כ: ${selectedOrder.total.toFixed(2)}₪`}
+              </div>
+              {canEditWeights && actualTotal !== selectedOrder.total && (
+                <div className="text-sm text-gray-500">סה"כ מקורי: {selectedOrder.total.toFixed(2)}₪</div>
+              )}
+            </div>
+            {canEditWeights && dbConnected && (
+              <button onClick={saveActualWeights} disabled={savingWeights} className="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                {savingWeights ? '⏳ שומר...' : '💾 שמור משקלים'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -452,9 +585,9 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">📋 ניהול הזמנות</h1>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 חיפוש לפי שם, טלפון או מספר הזמנה" className="px-4 py-2 rounded-lg border border-gray-200 bg-white w-64" />
-        <div className="flex gap-2">
+      <div className="space-y-3 mb-4">
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 חיפוש לפי שם, טלפון או מספר הזמנה" className="px-4 py-2 rounded-lg border border-gray-200 bg-white w-full sm:w-64" />
+        <div className="flex gap-2 flex-wrap">
           {['all', 'pending', 'confirmed', 'ready', 'completed', 'cancelled'].map(s => (
             <button key={s} onClick={() => setFilter(s)} className={`px-3 py-2 rounded-lg text-sm font-medium ${filter === s ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
               {s === 'all' ? 'הכל' : STATUS_MAP[s].icon + ' ' + STATUS_MAP[s].label}
@@ -464,8 +597,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
       </div>
 
       {/* Orders table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-max">
           <thead className="bg-gray-50">
             <tr>
               <th className="py-3 px-4 text-right font-medium text-gray-600">מס׳</th>
@@ -520,7 +653,7 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
 }
 
 // ==================== PRICING PAGE ====================
-function PricingPage({ products, setProducts, dbConnected }) {
+function PricingPage({ products, setProducts, dbConnected, wholesaleStatus, onFetchWholesale }) {
   const [editPrices, setEditPrices] = useState({});
   const [saved, setSaved] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -540,18 +673,12 @@ function PricingPage({ products, setProducts, dbConnected }) {
   const saveAllPrices = async () => {
     setProducts(prev => prev.map(p => ({ ...p, price: editPrices[p.id] || p.price })));
 
-    // Save to Supabase
+    // Save to Supabase via RPC function (bypasses RLS)
     if (sb && dbConnected) {
-      const today = new Date().toISOString().split('T')[0];
       for (const p of products) {
         const newPrice = editPrices[p.id];
         if (newPrice && newPrice > 0) {
-          await sb.from('daily_prices').upsert({
-            product_id: p.id,
-            date: today,
-            price_nis: newPrice,
-            stock_available: p.active !== false,
-          }, { onConflict: 'product_id,date' });
+          await sb.rpc('upsert_daily_price', { p_product_id: p.id, p_price: newPrice, p_available: p.active !== false });
         }
       }
     }
@@ -564,14 +691,14 @@ function PricingPage({ products, setProducts, dbConnected }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">💰 עדכון מחירים יומי</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">💰 עדכון מחירים יומי</h1>
           <p className="text-gray-500 text-sm">עדכון אחרון: {new Date().toLocaleDateString('he-IL')} | {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</p>
         </div>
         <button
           onClick={saveAllPrices}
-          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition"
+          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700 transition w-full sm:w-auto"
         >
           💾 שמור את כל המחירים
         </button>
@@ -591,8 +718,8 @@ function PricingPage({ products, setProducts, dbConnected }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-max">
           <thead className="bg-gray-50">
             <tr>
               <th className="py-3 px-4 text-right font-medium text-gray-600"></th>
@@ -647,11 +774,30 @@ function PricingPage({ products, setProducts, dbConnected }) {
         </table>
       </div>
 
-      {/* CSV Upload hint */}
+      {/* Wholesale price fetch */}
       <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <h3 className="font-bold text-blue-800 mb-2">📄 העלאת מחירים מקובץ CSV</h3>
-        <p className="text-sm text-blue-600">בגרסה המלאה - ניתן להעלות קובץ CSV עם מחירים יומיים מהמחירון הרשמי של plants.moonsite.co.il</p>
-        <p className="text-xs text-blue-500 mt-1">פורמט: שם_מוצר, מחיר, זמין (כן/לא)</p>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-2">
+          <div>
+            <h3 className="font-bold text-blue-800">🏪 מחירים סיטונאיים - מועצת הצמחים</h3>
+            <p className="text-sm text-blue-600">מתעדכן אוטומטית כל יום ב-07:30 | עדיפות: מובחר ← סוג א׳</p>
+          </div>
+          <button
+            onClick={onFetchWholesale}
+            disabled={wholesaleStatus.loading}
+            className={`${wholesaleStatus.loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-2 rounded-lg font-bold text-sm transition whitespace-nowrap`}
+          >
+            {wholesaleStatus.loading ? '⏳ מעדכן...' : '🔄 עדכן מחירים עכשיו'}
+          </button>
+        </div>
+        {wholesaleStatus.lastFetch && (
+          <p className="text-xs text-green-700 bg-green-50 rounded p-2 mt-2">
+            ✅ עודכנו {wholesaleStatus.count} מוצרים | {wholesaleStatus.lastFetch.toLocaleString('he-IL')}
+          </p>
+        )}
+        {wholesaleStatus.error && (
+          <p className="text-xs text-red-700 bg-red-50 rounded p-2 mt-2">❌ {wholesaleStatus.error}</p>
+        )}
+        <p className="text-xs text-blue-400 mt-2">מקור: plants.moonsite.co.il | ירקות בלבד (פירות, עשבי תיבול וחומרי גלם יש לעדכן ידנית)</p>
       </div>
     </div>
   );
@@ -722,9 +868,9 @@ function ProductsPage({ products, setProducts, dbConnected }) {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">📦 ניהול מוצרים</h1>
-        <button onClick={startNew} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700">+ הוסף מוצר</button>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">📦 ניהול מוצרים</h1>
+        <button onClick={startNew} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 w-full sm:w-auto">+ הוסף מוצר</button>
       </div>
 
       {/* Product form modal */}
@@ -832,13 +978,25 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           'store_address': settings.address,
           'store_phone': settings.phone,
           'delivery_area': settings.deliveryArea,
+          'emailjs_enabled': String(settings.emailjsEnabled),
+          'emailjs_service_id': settings.emailjsServiceId,
+          'emailjs_template_id': settings.emailjsTemplateId,
+          'emailjs_public_key': settings.emailjsPublicKey,
+          'emailjs_to_email': settings.emailjsToEmail,
+          'whatsapp_enabled': String(settings.whatsappEnabled),
+          'whatsapp_phone': settings.whatsappPhone,
+          'twilio_account_sid': settings.twilioAccountSid,
+          'twilio_auth_token': settings.twilioAuthToken,
+          'twilio_whatsapp_from': settings.twilioWhatsappFrom,
+          'customer_whatsapp_enabled': String(settings.customerWhatsappEnabled),
+          'whatsapp_business_phone_id': settings.whatsappBusinessPhoneId,
+          'whatsapp_business_token': settings.whatsappBusinessToken,
+          'delivery_time_slots': settings.deliveryTimeSlots,
         };
         for (const [key, value] of Object.entries(settingsMap)) {
-          const { error } = await sb
+          await sb
             .from('store_settings')
-            .update({ setting_value: value })
-            .eq('setting_key', key);
-          if (error) throw error;
+            .upsert({ setting_key: key, setting_value: value || '' }, { onConflict: 'setting_key' });
         }
       }
       setSaved(true);
@@ -877,7 +1035,7 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
             ></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">שעת פתיחה</label>
               <input type="time" value={settings.orderingStartHour} onChange={e => handleChange('orderingStartHour', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" />
@@ -903,7 +1061,7 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
             <div className={`toggle-switch ${settings.pickupEnabled ? 'active' : ''}`} onClick={() => handleChange('pickupEnabled', !settings.pickupEnabled)}></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">עמלת משלוח (₪)</label>
               <input type="number" value={settings.deliveryFee} onChange={e => handleChange('deliveryFee', parseFloat(e.target.value) || 0)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" />
@@ -917,6 +1075,12 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">אזור משלוח</label>
             <input type="text" value={settings.deliveryArea} onChange={e => handleChange('deliveryArea', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" />
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">🕐 חלונות זמן למשלוח/איסוף (מופרדים בפסיקים)</label>
+            <input type="text" value={settings.deliveryTimeSlots} onChange={e => handleChange('deliveryTimeSlots', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" placeholder="08:00-10:00,10:00-12:00,..." />
+            <p className="text-xs text-gray-400 mt-1">הלקוח יבחר חלון זמן בתהליך ההזמנה. דוגמה: 08:00-10:00,10:00-12:00,12:00-14:00</p>
           </div>
         </div>
 
@@ -939,6 +1103,131 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           </div>
         </div>
 
+        {/* Email Notifications */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="font-bold text-lg text-gray-800 mb-4">📧 התראות אימייל (EmailJS)</h2>
+
+          <div className="flex items-center justify-between mb-4 bg-gray-50 rounded-lg p-4">
+            <div>
+              <h3 className="font-bold">{settings.emailjsEnabled ? '✅ התראות אימייל פעילות' : '❌ התראות אימייל כבויות'}</h3>
+              <p className="text-sm text-gray-500">שלח אימייל כשמתקבלת הזמנה חדשה</p>
+            </div>
+            <div
+              className={`toggle-switch ${settings.emailjsEnabled ? 'active' : ''}`}
+              onClick={() => handleChange('emailjsEnabled', !settings.emailjsEnabled)}
+            ></div>
+          </div>
+
+          {settings.emailjsEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                📌 הירשם בחינם ב-<a href="https://www.emailjs.com" target="_blank" className="text-blue-600 underline" dir="ltr">emailjs.com</a> ← צור שירות (Gmail) + תבנית עם המשתנים: {'{'}order_number{'}'}, {'{'}customer_name{'}'}, {'{'}customer_phone{'}'}, {'{'}delivery_type{'}'}, {'{'}address{'}'}, {'{'}items{'}'}, {'{'}total{'}'}, {'{'}notes{'}'}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service ID</label>
+                  <input type="text" value={settings.emailjsServiceId} onChange={e => handleChange('emailjsServiceId', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="service_xxxxxxx" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Template ID</label>
+                  <input type="text" value={settings.emailjsTemplateId} onChange={e => handleChange('emailjsTemplateId', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="template_xxxxxxx" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Public Key</label>
+                  <input type="text" value={settings.emailjsPublicKey} onChange={e => handleChange('emailjsPublicKey', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="xxxxxxxxxxxx" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">אימייל לקבלת התראות</label>
+                  <input type="email" value={settings.emailjsToEmail} onChange={e => handleChange('emailjsToEmail', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="admin@example.com" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Notifications */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="font-bold text-lg text-gray-800 mb-4">💬 התראות וואטסאפ (Twilio)</h2>
+
+          <div className="flex items-center justify-between mb-4 bg-gray-50 rounded-lg p-4">
+            <div>
+              <h3 className="font-bold">{settings.whatsappEnabled ? '✅ התראות וואטסאפ פעילות' : '❌ התראות וואטסאפ כבויות'}</h3>
+              <p className="text-sm text-gray-500">שלח הודעת וואטסאפ כשמתקבלת הזמנה חדשה</p>
+            </div>
+            <div
+              className={`toggle-switch ${settings.whatsappEnabled ? 'active' : ''}`}
+              onClick={() => handleChange('whatsappEnabled', !settings.whatsappEnabled)}
+            ></div>
+          </div>
+
+          {settings.whatsappEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 bg-green-50 border border-green-200 rounded-lg p-3">
+                📌 הירשם ב-<a href="https://www.twilio.com/whatsapp" target="_blank" className="text-green-700 underline" dir="ltr">twilio.com/whatsapp</a> והפעל את Twilio Sandbox for WhatsApp. העתק את Account SID, Auth Token ומספר ה-WhatsApp From מהקונסול.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">מספר טלפון לקבלת התראות (עם קידומת מדינה)</label>
+                  <input type="text" value={settings.whatsappPhone} onChange={e => handleChange('whatsappPhone', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="972501234567" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account SID</label>
+                  <input type="text" value={settings.twilioAccountSid} onChange={e => handleChange('twilioAccountSid', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Auth Token</label>
+                  <input type="password" value={settings.twilioAuthToken} onChange={e => handleChange('twilioAuthToken', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp From Number</label>
+                  <input type="text" value={settings.twilioWhatsappFrom} onChange={e => handleChange('twilioWhatsappFrom', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="14155238886" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Customer WhatsApp Business Notifications */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="font-bold text-lg text-gray-800 mb-4">💬 הודעות וואטסאפ ללקוחות (WhatsApp Business)</h2>
+
+          <div className="flex items-center justify-between mb-4 bg-gray-50 rounded-lg p-4">
+            <div>
+              <h3 className="font-bold">{settings.customerWhatsappEnabled ? '✅ הודעות ללקוחות פעילות' : '❌ הודעות ללקוחות כבויות'}</h3>
+              <p className="text-sm text-gray-500">שלח הודעת וואטסאפ ללקוח כשסטטוס ההזמנה משתנה</p>
+            </div>
+            <div
+              className={`toggle-switch ${settings.customerWhatsappEnabled ? 'active' : ''}`}
+              onClick={() => handleChange('customerWhatsappEnabled', !settings.customerWhatsappEnabled)}
+            ></div>
+          </div>
+
+          {settings.customerWhatsappEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                📌 נדרש חשבון WhatsApp Business API דרך <a href="https://business.facebook.com" target="_blank" className="text-blue-600 underline">Meta Business Suite</a>. הכנס את Phone Number ID ואת Access Token מההגדרות.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number ID</label>
+                  <input type="text" value={settings.whatsappBusinessPhoneId} onChange={e => handleChange('whatsappBusinessPhoneId', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="1234567890" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                  <input type="text" value={settings.whatsappBusinessToken} onChange={e => handleChange('whatsappBusinessToken', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="EAAxxxxxxx..." />
+                </div>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
+                <p className="font-bold mb-1">הודעות שיישלחו:</p>
+                <p>✓ אישור → "הזמנתך אושרה ומטופלת! 🎉"</p>
+                <p>✓ מוכן → "אפשר לאסוף" / "המשלוח בדרך אליך"</p>
+                <p>✓ הושלם → "תודה שקנית בברכת השדה! 🙏"</p>
+                <p>✓ בוטל → "הזמנתך בוטלה. לפרטים: ..."</p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {saveError && (
           <div className="bg-red-100 border border-red-300 text-red-800 rounded-lg p-3 mb-4 font-medium">
             ❌ {saveError}
@@ -957,14 +1246,238 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
   );
 }
 
+// ==================== NOTIFICATION SOUND ====================
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3);
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.3);
+    });
+  } catch (e) { console.log('Audio not supported'); }
+}
+
+// ==================== EMAIL & WHATSAPP NOTIFICATIONS ====================
+async function sendEmailNotification(order, settings) {
+  if (!settings.emailjsEnabled || !settings.emailjsServiceId || !settings.emailjsTemplateId || !settings.emailjsPublicKey) return;
+  try {
+    const itemsList = order.items.map(i => `${i.name} x${i.qty} ${i.unit === 'kg' ? 'ק"ג' : 'יח׳'}`).join(', ');
+    await emailjs.send(settings.emailjsServiceId, settings.emailjsTemplateId, {
+      to_email: settings.emailjsToEmail,
+      order_number: order.orderNumber,
+      customer_name: order.customerName,
+      customer_phone: order.phone,
+      delivery_type: order.deliveryType === 'delivery' ? 'משלוח' : 'איסוף עצמי',
+      address: order.address || '-',
+      items: itemsList,
+      total: order.total.toFixed(2),
+      notes: order.notes || '-',
+    }, settings.emailjsPublicKey);
+    console.log('Email notification sent');
+  } catch (err) {
+    console.error('Email notification failed:', err);
+  }
+}
+
+async function sendWhatsAppNotification(order, settings) {
+  if (!settings.whatsappEnabled || !settings.twilioAccountSid || !settings.twilioAuthToken || !settings.twilioWhatsappFrom || !settings.whatsappPhone) return;
+  try {
+    const message =
+      `🛒 הזמנה חדשה #${order.orderNumber}\n` +
+      `👤 ${order.customerName}\n` +
+      `📱 ${order.phone}\n` +
+      `${order.deliveryType === 'delivery' ? '🚗 משלוח: ' + order.address : '📍 איסוף עצמי'}\n` +
+      `💰 סה"כ: ${order.total.toFixed(2)}₪\n` +
+      (order.notes ? `📝 ${order.notes}\n` : '');
+    const phone = settings.whatsappPhone.replace(/[^0-9]/g, '');
+    const fromPhone = settings.twilioWhatsappFrom.replace(/[^0-9]/g, '');
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${settings.twilioAccountSid}/Messages.json`;
+    const body = new URLSearchParams({
+      From: `whatsapp:+${fromPhone}`,
+      To: `whatsapp:+${phone}`,
+      Body: message,
+    });
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + btoa(`${settings.twilioAccountSid}:${settings.twilioAuthToken}`),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+    console.log('WhatsApp notification sent via Twilio');
+  } catch (err) {
+    console.error('WhatsApp notification failed:', err);
+  }
+}
+
+// ==================== CUSTOMER WHATSAPP STATUS NOTIFICATIONS ====================
+async function sendCustomerStatusWhatsApp(order, newStatus, settings) {
+  if (!settings.customerWhatsappEnabled || !settings.whatsappBusinessPhoneId || !settings.whatsappBusinessToken) return;
+  try {
+    // Format customer phone: strip dashes/spaces, "05X" → "9725X"
+    let phone = order.phone.replace(/[-\s]/g, '');
+    if (phone.startsWith('05')) phone = '972' + phone.slice(1);
+    if (phone.startsWith('0')) phone = '972' + phone.slice(1);
+
+    const statusMessages = {
+      confirmed: `שלום ${order.customerName}, הזמנתך #${order.orderNumber} בברכת השדה אושרה ומטופלת! 🎉`,
+      ready: order.deliveryType === 'delivery'
+        ? `שלום ${order.customerName}, הזמנתך #${order.orderNumber} מוכנה! המשלוח בדרך אליך 🚗`
+        : `שלום ${order.customerName}, הזמנתך #${order.orderNumber} מוכנה! אפשר לאסוף מ: ${settings.address || 'החנות'} 📍`,
+      completed: `תודה שקנית בברכת השדה! 🙏 נשמח לראותך שוב.`,
+      cancelled: `שלום ${order.customerName}, הזמנתך #${order.orderNumber} בוטלה. לפרטים: ${settings.phone || ''}`,
+    };
+
+    const message = statusMessages[newStatus];
+    if (!message) return;
+
+    const url = `https://graph.facebook.com/v21.0/${settings.whatsappBusinessPhoneId}/messages`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.whatsappBusinessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+    console.log(`Customer WhatsApp sent to ${phone} for status: ${newStatus}`);
+  } catch (err) {
+    console.error('Customer WhatsApp notification failed:', err);
+  }
+}
+
+// ==================== WHOLESALE PRICE FETCHING ====================
+// Map store product names → wholesale product name keywords
+const WHOLESALE_MAP = {
+  'עגבניות': ['עגבניות', 'עגבניות אשכולות'],
+  'עגבניות שרי': ['עגבניות שרי'],
+  'מלפפונים': ['מלפפון'],
+  'פלפל אדום': ['פלפל אדום'],
+  'פלפל ירוק': ['פלפל ירוק'],
+  'פלפל צהוב': ['פלפל צהוב'],
+  'פלפל כתום': ['פלפל כתום'],
+  'חסה': ['חסה'],
+  'גזר': ['גזר'],
+  'בצל יבש': ['בצל יבש'],
+  'בצל ירוק': ['בצל ירוק'],
+  'תפוח אדמה': ['תפוח אדמה', 'תפו"א'],
+  'חציל': ['חציל', 'חצילים'],
+  'קישוא': ['זוקיני', 'קישואים'],
+  'כרובית': ['כרובית'],
+  'ברוקולי': ['ברוקולי'],
+  'בטטה': ['בטטות'],
+  'כרוב': ['כרוב לבן'],
+  'כרוב אדום': ['כרוב אדום'],
+  'שעועית': ['שעועית'],
+  'תירס': ['תירס'],
+  'אבטיח': ['אבטיח'],
+  'דלעת': ['דלעת'],
+  'שום': ['שום'],
+  'סלק': ['סלק'],
+  'מלון': ['מלון'],
+};
+
+async function fetchWholesalePrices() {
+  const url = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://plants.moonsite.co.il');
+  const res = await fetch(url);
+  const data = await res.json();
+  const html = data.contents;
+
+  // Parse the HTML text content for price rows
+  // The page contains rows with: date | product name | סוג א price | מובחר price
+  const prices = {};
+
+  // Extract text between table-like patterns
+  // Look for patterns: product name followed by numbers (prices)
+  const lines = html.replace(/<[^>]+>/g, '\n').split('\n').map(l => l.trim()).filter(l => l);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Check if this line matches a known wholesale product
+    for (const [storeName, keywords] of Object.entries(WHOLESALE_MAP)) {
+      for (const keyword of keywords) {
+        if (line.includes(keyword) && !prices[storeName]) {
+          // Look for price numbers nearby (next few lines)
+          const nearby = lines.slice(i, i + 8).join(' ');
+          // Extract numbers that look like prices (1-3 digits, optional decimal)
+          const priceMatches = nearby.match(/(\d{1,3}\.\d{2})/g);
+          if (priceMatches && priceMatches.length >= 1) {
+            // If 2 prices found: first is סוג א, second is מובחר
+            // Priority: מובחר first, fallback to סוג א
+            if (priceMatches.length >= 2) {
+              prices[storeName] = parseFloat(priceMatches[1]); // מובחר
+            } else {
+              prices[storeName] = parseFloat(priceMatches[0]); // סוג א
+            }
+          }
+        }
+      }
+    }
+  }
+  return prices;
+}
+
+async function applyWholesalePrices(products, setProducts, setEditPrices, dbConnected) {
+  const wholesale = await fetchWholesalePrices();
+  const updated = {};
+  let count = 0;
+
+  products.forEach(p => {
+    if (wholesale[p.name]) {
+      updated[p.id] = wholesale[p.name];
+      count++;
+    }
+  });
+
+  if (count > 0) {
+    // Update edit prices in PricingPage
+    if (setEditPrices) {
+      setEditPrices(prev => ({ ...prev, ...updated }));
+    }
+
+    // Update products state
+    setProducts(prev => prev.map(p => updated[p.id] ? { ...p, price: updated[p.id] } : p));
+
+    // Save to Supabase via RPC function (bypasses RLS)
+    if (sb && dbConnected) {
+      for (const [productId, price] of Object.entries(updated)) {
+        await sb.rpc('upsert_daily_price', { p_product_id: productId, p_price: price, p_available: true });
+      }
+    }
+  }
+
+  return { count, prices: wholesale };
+}
+
 // ==================== MAIN APP ====================
 function AdminApp() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [dbConnected, setDbConnected] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [wholesaleStatus, setWholesaleStatus] = useState({ lastFetch: null, count: 0, loading: false, error: '' });
+  const knownOrderIdsRef = React.useRef(null);
+  const settingsRef = React.useRef(null);
+  const wholesaleFetchedTodayRef = React.useRef(false);
   const [settings, setSettings] = useState({
     orderingOpen: true,
     orderingStartHour: '07:00',
@@ -977,7 +1490,27 @@ function AdminApp() {
     address: 'רחוב הרצל 12, בית שמש',
     phone: '02-999-8888',
     deliveryArea: 'בית שמש בלבד',
+    // Notification settings
+    emailjsEnabled: false,
+    emailjsServiceId: '',
+    emailjsTemplateId: '',
+    emailjsPublicKey: '',
+    emailjsToEmail: 'shaked4561@gmail.com',
+    whatsappEnabled: false,
+    whatsappPhone: '972542556706',
+    twilioAccountSid: '',
+    twilioAuthToken: '',
+    twilioWhatsappFrom: '',
+    // Customer WhatsApp Business settings
+    customerWhatsappEnabled: false,
+    whatsappBusinessPhoneId: '',
+    whatsappBusinessToken: '',
+    // Delivery time slots
+    deliveryTimeSlots: '08:00-10:00,10:00-12:00,12:00-14:00,14:00-16:00,16:00-18:00,18:00-20:00',
   });
+
+  // Keep settings ref in sync for use inside loadFromDB closure
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   // Load data from Supabase
   async function loadFromDB() {
@@ -1000,7 +1533,7 @@ function AdminApp() {
       const itemsByOrder = {};
       if (dbItems) dbItems.forEach(i => {
         if (!itemsByOrder[i.order_id]) itemsByOrder[i.order_id] = [];
-        itemsByOrder[i.order_id].push({ name: i.product_name_he, qty: parseFloat(i.quantity), unit: i.unit_type, price: parseFloat(i.price_at_purchase) });
+        itemsByOrder[i.order_id].push({ itemId: i.id, name: i.product_name_he, qty: parseFloat(i.quantity), unit: i.unit_type, price: parseFloat(i.price_at_purchase), actualQty: i.actual_quantity != null ? parseFloat(i.actual_quantity) : null });
       });
 
       const mappedOrders = dbOrders.map(o => ({
@@ -1011,6 +1544,7 @@ function AdminApp() {
         email: o.customer_email || '',
         deliveryType: o.delivery_type,
         address: o.delivery_address || '',
+        timeSlot: o.delivery_time_slot || '',
         items: itemsByOrder[o.id] || [],
         total: parseFloat(o.total_amount),
         status: o.status,
@@ -1018,6 +1552,28 @@ function AdminApp() {
         notes: o.notes || '',
         createdAt: new Date(o.created_at),
       }));
+
+      // Detect new orders
+      if (knownOrderIdsRef.current !== null) {
+        const newOrders = mappedOrders.filter(o => !knownOrderIdsRef.current.has(o.id));
+        if (newOrders.length > 0) {
+          playNotificationSound();
+          const currentSettings = settingsRef.current;
+          newOrders.forEach(o => {
+            const notif = { id: Date.now() + '-' + o.id, orderNumber: o.orderNumber, customerName: o.customerName, total: o.total };
+            setNotifications(prev => [...prev, notif]);
+            setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== notif.id)), 6000);
+            // Browser notification
+            if (Notification.permission === 'granted') {
+              new Notification('הזמנה חדשה!', { body: `#${o.orderNumber} - ${o.customerName} | ${o.total.toFixed(2)}₪`, icon: '🛒' });
+            }
+            // Email & WhatsApp notifications
+            sendEmailNotification(o, currentSettings);
+            sendWhatsAppNotification(o, currentSettings);
+          });
+        }
+      }
+      knownOrderIdsRef.current = new Set(mappedOrders.map(o => o.id));
 
       setOrders(mappedOrders);
 
@@ -1031,11 +1587,22 @@ function AdminApp() {
 
         // Load today prices
         const today = new Date().toISOString().split('T')[0];
-        const { data: prices } = await sb.from('daily_prices').select('*').eq('date', today);
-        if (prices) {
-          const priceMap = {};
-          prices.forEach(p => { priceMap[p.product_id] = parseFloat(p.price_nis); });
-          mappedProds.forEach(p => { if (priceMap[p.id]) p.price = priceMap[p.id]; });
+        const { data: todayPrices } = await sb.from('daily_prices').select('*').eq('date', today);
+        const todayPriceMap = {};
+        if (todayPrices) {
+          todayPrices.forEach(p => { todayPriceMap[p.product_id] = parseFloat(p.price_nis); });
+          mappedProds.forEach(p => { if (todayPriceMap[p.id]) p.price = todayPriceMap[p.id]; });
+        }
+
+        // For products without today's price, fetch most recent price
+        const missingIds = mappedProds.filter(p => !todayPriceMap[p.id]).map(p => p.id);
+        if (missingIds.length > 0) {
+          const { data: latestPrices } = await sb.from('daily_prices').select('*').in('product_id', missingIds).eq('stock_available', true).order('date', { ascending: false });
+          if (latestPrices) {
+            const latestMap = {};
+            latestPrices.forEach(p => { if (!latestMap[p.product_id]) latestMap[p.product_id] = parseFloat(p.price_nis); });
+            mappedProds.forEach(p => { if (!todayPriceMap[p.id] && latestMap[p.id]) p.price = latestMap[p.id]; });
+          }
         }
         setProducts(mappedProds);
       }
@@ -1045,7 +1612,8 @@ function AdminApp() {
       if (dbSets && dbSets.length > 0) {
         const sObj = {};
         dbSets.forEach(s => { sObj[s.setting_key] = s.setting_value; });
-        setSettings({
+        setSettings(prev => ({
+          ...prev,
           orderingOpen: sObj.ordering_open === 'true',
           orderingStartHour: sObj.ordering_start_hour || '07:00',
           orderingEndHour: sObj.ordering_end_hour || '20:00',
@@ -1057,7 +1625,22 @@ function AdminApp() {
           address: sObj.store_address || '',
           phone: sObj.store_phone || '',
           deliveryArea: sObj.delivery_area || '',
-        });
+          // Notification settings from DB
+          emailjsEnabled: sObj.emailjs_enabled === 'true' || prev.emailjsEnabled,
+          emailjsServiceId: sObj.emailjs_service_id || prev.emailjsServiceId,
+          emailjsTemplateId: sObj.emailjs_template_id || prev.emailjsTemplateId,
+          emailjsPublicKey: sObj.emailjs_public_key || prev.emailjsPublicKey,
+          emailjsToEmail: sObj.emailjs_to_email || prev.emailjsToEmail,
+          whatsappEnabled: sObj.whatsapp_enabled === 'true' || prev.whatsappEnabled,
+          whatsappPhone: sObj.whatsapp_phone || prev.whatsappPhone,
+          twilioAccountSid: sObj.twilio_account_sid || prev.twilioAccountSid,
+          twilioAuthToken: sObj.twilio_auth_token || prev.twilioAuthToken,
+          twilioWhatsappFrom: sObj.twilio_whatsapp_from || prev.twilioWhatsappFrom,
+          customerWhatsappEnabled: sObj.customer_whatsapp_enabled === 'true' || prev.customerWhatsappEnabled,
+          whatsappBusinessPhoneId: sObj.whatsapp_business_phone_id || prev.whatsappBusinessPhoneId,
+          whatsappBusinessToken: sObj.whatsapp_business_token || prev.whatsappBusinessToken,
+          deliveryTimeSlots: sObj.delivery_time_slots || prev.deliveryTimeSlots,
+        }));
       }
       setDbConnected(true);
     } catch (err) {
@@ -1074,9 +1657,51 @@ function AdminApp() {
     return () => clearInterval(interval);
   }, [loggedIn, dbConnected]);
 
+  // Wholesale price fetch wrapper
+  const triggerWholesaleFetch = useCallback(async () => {
+    setWholesaleStatus(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const result = await applyWholesalePrices(products, setProducts, null, dbConnected);
+      setWholesaleStatus({ lastFetch: new Date(), count: result.count, loading: false, error: '' });
+      wholesaleFetchedTodayRef.current = true;
+      console.log(`Wholesale prices updated: ${result.count} products`);
+    } catch (err) {
+      console.error('Wholesale fetch failed:', err);
+      setWholesaleStatus(prev => ({ ...prev, loading: false, error: 'שגיאה בעדכון מחירים סיטונאיים' }));
+    }
+  }, [products, dbConnected]);
+
+  // Auto-fetch wholesale prices at 7:30 AM daily
+  useEffect(() => {
+    if (!loggedIn) return;
+    const checkSchedule = () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      if (hour === 7 && minute >= 30 && minute <= 32 && !wholesaleFetchedTodayRef.current) {
+        triggerWholesaleFetch();
+      }
+      // Reset flag at midnight
+      if (hour === 0 && minute === 0) {
+        wholesaleFetchedTodayRef.current = false;
+      }
+    };
+    // Also try fetching on load if after 7:30 and not yet fetched today
+    const now = new Date();
+    if ((now.getHours() > 7 || (now.getHours() === 7 && now.getMinutes() >= 30)) && !wholesaleFetchedTodayRef.current) {
+      triggerWholesaleFetch();
+    }
+    const interval = setInterval(checkSchedule, 60000); // check every minute
+    return () => clearInterval(interval);
+  }, [loggedIn, triggerWholesaleFetch]);
+
   const handleLogin = (userData) => {
     setUser(userData);
     setLoggedIn(true);
+    // Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   };
 
   // Update order status in Supabase
@@ -1087,18 +1712,43 @@ function AdminApp() {
 
   // Wrapper to update order status in DB
   const updateOrderStatusDB = async (orderId, newStatus) => {
+    const order = orders.find(o => o.id === orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     if (sb && dbConnected) {
       await sb.from('orders').update({ status: newStatus }).eq('id', orderId);
+    }
+    // Send WhatsApp status update to customer (fire-and-forget)
+    if (order) {
+      sendCustomerStatusWhatsApp(order, newStatus, settingsRef.current);
     }
   };
 
   if (!loggedIn) return <LoginPage onLogin={handleLogin} />;
 
+  const PAGE_TITLES = { dashboard: 'דשבורד', orders: 'הזמנות', pricing: 'מחירים', products: 'מוצרים', settings: 'הגדרות' };
+
   return (
     <div className="flex">
-      <Sidebar activePage={page} setPage={setPage} user={user} onLogout={() => setLoggedIn(false)} />
-      <main className="mr-64 flex-1 p-6 min-h-screen" style={{ marginRight: '256px' }}>
+      {/* New order notifications */}
+      {notifications.map(n => (
+        <div key={n.id} className="notification-toast bg-green-600 text-white rounded-xl shadow-lg px-6 py-4 flex items-center gap-3" onClick={() => { setPage('orders'); setNotifications(prev => prev.filter(x => x.id !== n.id)); }}>
+          <span className="text-2xl">🛒</span>
+          <div>
+            <div className="font-bold">הזמנה חדשה!</div>
+            <div className="text-sm">#{n.orderNumber} - {n.customerName} | {n.total.toFixed(2)}₪</div>
+          </div>
+          <button onClick={(e) => { e.stopPropagation(); setNotifications(prev => prev.filter(x => x.id !== n.id)); }} className="mr-2 text-white text-xl leading-none hover:opacity-70">&times;</button>
+        </div>
+      ))}
+
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button onClick={() => setSidebarOpen(true)} className="text-2xl leading-none p-1">☰</button>
+        <span className="font-bold text-lg">{PAGE_TITLES[page]}</span>
+      </div>
+
+      <Sidebar activePage={page} setPage={setPage} user={user} onLogout={() => setLoggedIn(false)} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <main className="main-content flex-1 p-4 sm:p-6 min-h-screen" style={{ marginRight: '256px' }}>
         {!dbConnected && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-yellow-800 text-sm">
             ⚠️ לא מחובר ל-Supabase - מציג נתוני דמו. הרץ את קבצי ה-SQL כדי לחבר לבסיס הנתונים.
@@ -1112,7 +1762,7 @@ function AdminApp() {
         )}
         {page === 'dashboard' && <DashboardPage orders={orders} settings={settings} />}
         {page === 'orders' && <OrdersPage orders={orders} setOrders={setOrders} updateStatusDB={updateOrderStatusDB} dbConnected={dbConnected} />}
-        {page === 'pricing' && <PricingPage products={products} setProducts={setProducts} dbConnected={dbConnected} />}
+        {page === 'pricing' && <PricingPage products={products} setProducts={setProducts} dbConnected={dbConnected} wholesaleStatus={wholesaleStatus} onFetchWholesale={triggerWholesaleFetch} />}
         {page === 'products' && <ProductsPage products={products} setProducts={setProducts} dbConnected={dbConnected} />}
         {page === 'settings' && <SettingsPage settings={settings} setSettings={setSettings} dbConnected={dbConnected} />}
       </main>
