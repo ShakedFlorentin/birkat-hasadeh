@@ -537,6 +537,19 @@ function CheckoutPage() {
 
         if (itemsErr) throw itemsErr;
 
+        // Send WhatsApp notification via Edge Function (non-blocking)
+        supabase.functions.invoke('send-order-whatsapp', {
+          body: {
+            order_number: order.order_number,
+            customer_name: form.name,
+            customer_phone: form.phone,
+            delivery_type: form.deliveryType,
+            delivery_address: form.deliveryType === 'delivery' ? form.address : null,
+            total_amount: grandTotal,
+            notes: form.notes || null,
+          }
+        }).catch(err => console.warn('WhatsApp notification failed:', err));
+
         setOrderNumber(order.order_number);
       } else {
         // Fallback - random number
