@@ -82,8 +82,8 @@ const INITIAL_PRODUCTS = [
   { id: 26, name: 'פטרוזיליה', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
   { id: 27, name: 'כוסברה', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
   { id: 28, name: 'נענע', category: 'herbs', unit: 'unit', price: 3.90, active: true, image: '🌿' },
-  { id: 32, name: 'תפוזים', category: 'citrus', unit: 'kg', price: 6.90, active: true, image: '🍊' },
-  { id: 33, name: 'לימון', category: 'citrus', unit: 'kg', price: 7.90, active: true, image: '🍋' },
+  { id: 32, name: 'תפוזים', category: 'fruits', unit: 'kg', price: 6.90, active: true, image: '🍊' },
+  { id: 33, name: 'לימון', category: 'fruits', unit: 'kg', price: 7.90, active: true, image: '🍋' },
   { id: 37, name: 'מנגו', category: 'exotic', unit: 'kg', price: 24.90, active: true, image: '🥭' },
   { id: 38, name: 'אבוקדו', category: 'exotic', unit: 'kg', price: 19.90, active: true, image: '🥑' },
 ];
@@ -98,7 +98,7 @@ const INITIAL_ORDERS = [
       { name: 'פלפל אדום', qty: 1, unit: 'kg', price: 11.90 },
       { name: 'בננות', qty: 1, unit: 'kg', price: 9.90 },
     ],
-    total: 44.55, status: 'pending', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*15),
+    total: 44.55, status: 'pending', paymentStatus: 'paid', notes: '', timeSlot: '10:00-12:00', createdAt: new Date(Date.now() - 1000*60*15),
   },
   {
     id: 1002, orderNumber: 4522, customerName: 'שרה לוי', phone: '052-9876543', email: '',
@@ -110,7 +110,7 @@ const INITIAL_ORDERS = [
       { name: 'פטרוזיליה', qty: 1, unit: 'unit', price: 3.90 },
       { name: 'נענע', qty: 1, unit: 'unit', price: 3.90 },
     ],
-    total: 77.30, status: 'confirmed', paymentStatus: 'paid', notes: 'אני צריכה את זה עד 14:00', createdAt: new Date(Date.now() - 1000*60*45),
+    total: 77.30, status: 'confirmed', paymentStatus: 'paid', notes: 'אני צריכה את זה עד 14:00', timeSlot: '12:00-14:00', createdAt: new Date(Date.now() - 1000*60*45),
   },
   {
     id: 1003, orderNumber: 4523, customerName: 'דוד ישראלי', phone: '054-5555555', email: 'david@mail.com',
@@ -120,7 +120,7 @@ const INITIAL_ORDERS = [
       { name: 'אבוקדו', qty: 1.5, unit: 'kg', price: 19.90 },
       { name: 'לימון', qty: 1, unit: 'kg', price: 7.90 },
     ],
-    total: 87.55, status: 'ready', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*120),
+    total: 87.55, status: 'ready', paymentStatus: 'paid', notes: '', timeSlot: '16:00-18:00', createdAt: new Date(Date.now() - 1000*60*120),
   },
   {
     id: 1004, orderNumber: 4524, customerName: 'רחל מזרחי', phone: '058-7777777', email: '',
@@ -132,7 +132,7 @@ const INITIAL_ORDERS = [
       { name: 'בצל יבש', qty: 2, unit: 'kg', price: 4.90 },
       { name: 'תפוח אדמה', qty: 3, unit: 'kg', price: 5.90 },
     ],
-    total: 68.20, status: 'completed', paymentStatus: 'paid', notes: '', createdAt: new Date(Date.now() - 1000*60*240),
+    total: 68.20, status: 'completed', paymentStatus: 'paid', notes: '', timeSlot: '08:00-10:00', createdAt: new Date(Date.now() - 1000*60*240),
   },
   {
     id: 1005, orderNumber: 4525, customerName: 'אברהם גולד', phone: '053-1111111', email: 'avi@test.com',
@@ -142,7 +142,7 @@ const INITIAL_ORDERS = [
       { name: 'תפוחים חרמון', qty: 2, unit: 'kg', price: 12.90 },
       { name: 'ענבים ירוקים', qty: 1, unit: 'kg', price: 19.90 },
     ],
-    total: 80.20, status: 'pending', paymentStatus: 'paid', notes: 'בבקשה להתקשר לפני', createdAt: new Date(Date.now() - 1000*60*5),
+    total: 80.20, status: 'pending', paymentStatus: 'paid', notes: 'בבקשה להתקשר לפני', timeSlot: '14:00-16:00', createdAt: new Date(Date.now() - 1000*60*5),
   },
 ];
 
@@ -365,6 +365,78 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
   const [filter, setFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [search, setSearch] = useState('');
+  const [actualWeights, setActualWeights] = useState({});
+  const [savingWeights, setSavingWeights] = useState(false);
+
+  // Initialize actualWeights when selecting an order
+  useEffect(() => {
+    if (selectedOrder) {
+      const weights = {};
+      selectedOrder.items.forEach((item, i) => {
+        if (item.unit === 'kg') {
+          weights[i] = item.actualQty != null ? item.actualQty : '';
+        }
+      });
+      setActualWeights(weights);
+    }
+  }, [selectedOrder?.id]);
+
+  const canEditWeights = selectedOrder && (selectedOrder.status === 'confirmed' || selectedOrder.status === 'ready');
+
+  const handleWeightChange = (index, value) => {
+    const num = value === '' ? '' : parseFloat(value);
+    const item = selectedOrder.items[index];
+    const maxAllowed = item.qty * 1.2;
+    if (num !== '' && num > maxAllowed) return;
+    setActualWeights(prev => ({ ...prev, [index]: value }));
+  };
+
+  const actualTotal = selectedOrder ? selectedOrder.items.reduce((sum, item, i) => {
+    if (item.unit === 'kg' && actualWeights[i] !== undefined && actualWeights[i] !== '') {
+      return sum + parseFloat(actualWeights[i]) * item.price;
+    }
+    return sum + item.qty * item.price;
+  }, 0) : 0;
+
+  const saveActualWeights = async () => {
+    if (!dbConnected || !sb) return;
+    setSavingWeights(true);
+    try {
+      for (const [index, weight] of Object.entries(actualWeights)) {
+        const item = selectedOrder.items[parseInt(index)];
+        if (weight !== '' && item.itemId) {
+          await sb.rpc('update_order_item_actual', { p_item_id: item.itemId, p_actual_qty: parseFloat(weight) });
+        }
+      }
+      await sb.rpc('update_order_total', { p_order_id: selectedOrder.id, p_total: parseFloat(actualTotal.toFixed(2)) });
+      // Update local state
+      setOrders(prev => prev.map(o => {
+        if (o.id !== selectedOrder.id) return o;
+        const updatedItems = o.items.map((item, i) => {
+          if (actualWeights[i] !== undefined && actualWeights[i] !== '') {
+            return { ...item, actualQty: parseFloat(actualWeights[i]) };
+          }
+          return item;
+        });
+        return { ...o, items: updatedItems, total: parseFloat(actualTotal.toFixed(2)) };
+      }));
+      setSelectedOrder(prev => ({
+        ...prev,
+        total: parseFloat(actualTotal.toFixed(2)),
+        items: prev.items.map((item, i) => {
+          if (actualWeights[i] !== undefined && actualWeights[i] !== '') {
+            return { ...item, actualQty: parseFloat(actualWeights[i]) };
+          }
+          return item;
+        })
+      }));
+      alert('המשקלים נשמרו בהצלחה!');
+    } catch (err) {
+      console.error('Error saving weights:', err);
+      alert('שגיאה בשמירת המשקלים');
+    }
+    setSavingWeights(false);
+  };
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
@@ -408,7 +480,8 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
             <div>
               <h3 className="font-bold text-gray-700 mb-2">פרטי משלוח</h3>
               <p>{selectedOrder.deliveryType === 'delivery' ? '🚗 משלוח ל: ' + selectedOrder.address : '📍 איסוף עצמי'}</p>
-              <p>🕐 {selectedOrder.createdAt.toLocaleString('he-IL')}</p>
+              {selectedOrder.timeSlot && <p>🕐 חלון זמן: {selectedOrder.timeSlot}</p>}
+              <p>📅 {selectedOrder.createdAt.toLocaleString('he-IL')}</p>
               <p>💳 {selectedOrder.paymentStatus === 'paid' ? '✅ שולם' : '❌ לא שולם'}</p>
             </div>
           </div>
@@ -425,25 +498,62 @@ function OrdersPage({ orders, setOrders, updateStatusDB, dbConnected }) {
               <thead>
                 <tr className="border-b">
                   <th className="py-2 px-4 text-right">מוצר</th>
-                  <th className="py-2 px-4 text-right">כמות</th>
+                  <th className="py-2 px-4 text-right">כמות מבוקשת</th>
+                  {canEditWeights && <th className="py-2 px-4 text-right">משקל בפועל</th>}
                   <th className="py-2 px-4 text-right">מחיר</th>
                   <th className="py-2 px-4 text-right">סה"כ</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedOrder.items.map((item, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="py-2 px-4">{item.name}</td>
-                    <td className="py-2 px-4">{item.qty} {item.unit === 'kg' ? 'ק"ג' : 'יח׳'}</td>
-                    <td className="py-2 px-4">{item.price.toFixed(2)}₪</td>
-                    <td className="py-2 px-4 font-medium">{(item.price * item.qty).toFixed(2)}₪</td>
-                  </tr>
-                ))}
+                {selectedOrder.items.map((item, i) => {
+                  const effQty = (item.unit === 'kg' && actualWeights[i] !== undefined && actualWeights[i] !== '') ? parseFloat(actualWeights[i]) : item.qty;
+                  return (
+                    <tr key={i} className="border-b">
+                      <td className="py-2 px-4">{item.name}</td>
+                      <td className="py-2 px-4">{item.qty} {item.unit === 'kg' ? 'ק"ג' : 'יח׳'}</td>
+                      {canEditWeights && (
+                        <td className="py-2 px-4">
+                          {item.unit === 'kg' ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={item.qty * 1.2}
+                                value={actualWeights[i] ?? ''}
+                                onChange={e => handleWeightChange(i, e.target.value)}
+                                className="w-20 px-2 py-1 border rounded text-sm"
+                                placeholder={item.qty.toString()}
+                              />
+                              <span className="text-xs text-gray-500">ק"ג</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="py-2 px-4">{item.price.toFixed(2)}₪</td>
+                      <td className="py-2 px-4 font-medium">{(item.price * effQty).toFixed(2)}₪</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <div className="text-left text-xl font-bold text-green-700">
-            סה"כ: {selectedOrder.total.toFixed(2)}₪
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div>
+              <div className="text-xl font-bold text-green-700">
+                {canEditWeights ? `סה"כ בפועל: ${actualTotal.toFixed(2)}₪` : `סה"כ: ${selectedOrder.total.toFixed(2)}₪`}
+              </div>
+              {canEditWeights && actualTotal !== selectedOrder.total && (
+                <div className="text-sm text-gray-500">סה"כ מקורי: {selectedOrder.total.toFixed(2)}₪</div>
+              )}
+            </div>
+            {canEditWeights && dbConnected && (
+              <button onClick={saveActualWeights} disabled={savingWeights} className="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                {savingWeights ? '⏳ שומר...' : '💾 שמור משקלים'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -876,6 +986,10 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           'whatsapp_enabled': String(settings.whatsappEnabled),
           'whatsapp_phone': settings.whatsappPhone,
           'whatsapp_api_key': settings.whatsappApiKey,
+          'customer_whatsapp_enabled': String(settings.customerWhatsappEnabled),
+          'whatsapp_business_phone_id': settings.whatsappBusinessPhoneId,
+          'whatsapp_business_token': settings.whatsappBusinessToken,
+          'delivery_time_slots': settings.deliveryTimeSlots,
         };
         for (const [key, value] of Object.entries(settingsMap)) {
           await sb
@@ -959,6 +1073,12 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">אזור משלוח</label>
             <input type="text" value={settings.deliveryArea} onChange={e => handleChange('deliveryArea', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" />
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">🕐 חלונות זמן למשלוח/איסוף (מופרדים בפסיקים)</label>
+            <input type="text" value={settings.deliveryTimeSlots} onChange={e => handleChange('deliveryTimeSlots', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200" dir="ltr" placeholder="08:00-10:00,10:00-12:00,..." />
+            <p className="text-xs text-gray-400 mt-1">הלקוח יבחר חלון זמן בתהליך ההזמנה. דוגמה: 08:00-10:00,10:00-12:00,12:00-14:00</p>
           </div>
         </div>
 
@@ -1057,6 +1177,47 @@ function SettingsPage({ settings, setSettings, dbConnected }) {
           )}
         </div>
 
+        {/* Customer WhatsApp Business Notifications */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="font-bold text-lg text-gray-800 mb-4">💬 הודעות וואטסאפ ללקוחות (WhatsApp Business)</h2>
+
+          <div className="flex items-center justify-between mb-4 bg-gray-50 rounded-lg p-4">
+            <div>
+              <h3 className="font-bold">{settings.customerWhatsappEnabled ? '✅ הודעות ללקוחות פעילות' : '❌ הודעות ללקוחות כבויות'}</h3>
+              <p className="text-sm text-gray-500">שלח הודעת וואטסאפ ללקוח כשסטטוס ההזמנה משתנה</p>
+            </div>
+            <div
+              className={`toggle-switch ${settings.customerWhatsappEnabled ? 'active' : ''}`}
+              onClick={() => handleChange('customerWhatsappEnabled', !settings.customerWhatsappEnabled)}
+            ></div>
+          </div>
+
+          {settings.customerWhatsappEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                📌 נדרש חשבון WhatsApp Business API דרך <a href="https://business.facebook.com" target="_blank" className="text-blue-600 underline">Meta Business Suite</a>. הכנס את Phone Number ID ואת Access Token מההגדרות.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number ID</label>
+                  <input type="text" value={settings.whatsappBusinessPhoneId} onChange={e => handleChange('whatsappBusinessPhoneId', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="1234567890" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                  <input type="text" value={settings.whatsappBusinessToken} onChange={e => handleChange('whatsappBusinessToken', e.target.value)} className="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm" dir="ltr" placeholder="EAAxxxxxxx..." />
+                </div>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
+                <p className="font-bold mb-1">הודעות שיישלחו:</p>
+                <p>✓ אישור → "הזמנתך אושרה ומטופלת! 🎉"</p>
+                <p>✓ מוכן → "אפשר לאסוף" / "המשלוח בדרך אליך"</p>
+                <p>✓ הושלם → "תודה שקנית בברכת השדה! 🙏"</p>
+                <p>✓ בוטל → "הזמנתך בוטלה. לפרטים: ..."</p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {saveError && (
           <div className="bg-red-100 border border-red-300 text-red-800 rounded-lg p-3 mb-4 font-medium">
             ❌ {saveError}
@@ -1135,6 +1296,47 @@ async function sendWhatsAppNotification(order, settings) {
     console.log('WhatsApp notification sent');
   } catch (err) {
     console.error('WhatsApp notification failed:', err);
+  }
+}
+
+// ==================== CUSTOMER WHATSAPP STATUS NOTIFICATIONS ====================
+async function sendCustomerStatusWhatsApp(order, newStatus, settings) {
+  if (!settings.customerWhatsappEnabled || !settings.whatsappBusinessPhoneId || !settings.whatsappBusinessToken) return;
+  try {
+    // Format customer phone: strip dashes/spaces, "05X" → "9725X"
+    let phone = order.phone.replace(/[-\s]/g, '');
+    if (phone.startsWith('05')) phone = '972' + phone.slice(1);
+    if (phone.startsWith('0')) phone = '972' + phone.slice(1);
+
+    const statusMessages = {
+      confirmed: `שלום ${order.customerName}, הזמנתך #${order.orderNumber} בברכת השדה אושרה ומטופלת! 🎉`,
+      ready: order.deliveryType === 'delivery'
+        ? `שלום ${order.customerName}, הזמנתך #${order.orderNumber} מוכנה! המשלוח בדרך אליך 🚗`
+        : `שלום ${order.customerName}, הזמנתך #${order.orderNumber} מוכנה! אפשר לאסוף מ: ${settings.address || 'החנות'} 📍`,
+      completed: `תודה שקנית בברכת השדה! 🙏 נשמח לראותך שוב.`,
+      cancelled: `שלום ${order.customerName}, הזמנתך #${order.orderNumber} בוטלה. לפרטים: ${settings.phone || ''}`,
+    };
+
+    const message = statusMessages[newStatus];
+    if (!message) return;
+
+    const url = `https://graph.facebook.com/v21.0/${settings.whatsappBusinessPhoneId}/messages`;
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.whatsappBusinessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+    console.log(`Customer WhatsApp sent to ${phone} for status: ${newStatus}`);
+  } catch (err) {
+    console.error('Customer WhatsApp notification failed:', err);
   }
 }
 
@@ -1276,6 +1478,12 @@ function AdminApp() {
     whatsappEnabled: false,
     whatsappPhone: '972542556706',
     whatsappApiKey: '',
+    // Customer WhatsApp Business settings
+    customerWhatsappEnabled: false,
+    whatsappBusinessPhoneId: '',
+    whatsappBusinessToken: '',
+    // Delivery time slots
+    deliveryTimeSlots: '08:00-10:00,10:00-12:00,12:00-14:00,14:00-16:00,16:00-18:00,18:00-20:00',
   });
 
   // Keep settings ref in sync for use inside loadFromDB closure
@@ -1302,7 +1510,7 @@ function AdminApp() {
       const itemsByOrder = {};
       if (dbItems) dbItems.forEach(i => {
         if (!itemsByOrder[i.order_id]) itemsByOrder[i.order_id] = [];
-        itemsByOrder[i.order_id].push({ name: i.product_name_he, qty: parseFloat(i.quantity), unit: i.unit_type, price: parseFloat(i.price_at_purchase) });
+        itemsByOrder[i.order_id].push({ itemId: i.id, name: i.product_name_he, qty: parseFloat(i.quantity), unit: i.unit_type, price: parseFloat(i.price_at_purchase), actualQty: i.actual_quantity != null ? parseFloat(i.actual_quantity) : null });
       });
 
       const mappedOrders = dbOrders.map(o => ({
@@ -1313,6 +1521,7 @@ function AdminApp() {
         email: o.customer_email || '',
         deliveryType: o.delivery_type,
         address: o.delivery_address || '',
+        timeSlot: o.delivery_time_slot || '',
         items: itemsByOrder[o.id] || [],
         total: parseFloat(o.total_amount),
         status: o.status,
@@ -1391,6 +1600,10 @@ function AdminApp() {
           whatsappEnabled: sObj.whatsapp_enabled === 'true' || prev.whatsappEnabled,
           whatsappPhone: sObj.whatsapp_phone || prev.whatsappPhone,
           whatsappApiKey: sObj.whatsapp_api_key || prev.whatsappApiKey,
+          customerWhatsappEnabled: sObj.customer_whatsapp_enabled === 'true' || prev.customerWhatsappEnabled,
+          whatsappBusinessPhoneId: sObj.whatsapp_business_phone_id || prev.whatsappBusinessPhoneId,
+          whatsappBusinessToken: sObj.whatsapp_business_token || prev.whatsappBusinessToken,
+          deliveryTimeSlots: sObj.delivery_time_slots || prev.deliveryTimeSlots,
         }));
       }
       setDbConnected(true);
@@ -1463,9 +1676,14 @@ function AdminApp() {
 
   // Wrapper to update order status in DB
   const updateOrderStatusDB = async (orderId, newStatus) => {
+    const order = orders.find(o => o.id === orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     if (sb && dbConnected) {
       await sb.from('orders').update({ status: newStatus }).eq('id', orderId);
+    }
+    // Send WhatsApp status update to customer (fire-and-forget)
+    if (order) {
+      sendCustomerStatusWhatsApp(order, newStatus, settingsRef.current);
     }
   };
 

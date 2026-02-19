@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name_he TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('fruits', 'vegetables', 'herbs', 'citrus', 'exotic')),
+  category TEXT NOT NULL CHECK (category IN ('fruits', 'vegetables', 'herbs', 'exotic', 'pantry', 'juices')),
   unit TEXT NOT NULL CHECK (unit IN ('kg', 'unit')),
   description_he TEXT,
   image_url TEXT,
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_address TEXT,
   delivery_floor TEXT,
   delivery_apartment TEXT,
+  delivery_time_slot TEXT,
   order_date DATE NOT NULL DEFAULT CURRENT_DATE,
   total_amount DECIMAL(10, 2) NOT NULL,
   delivery_fee DECIMAL(10, 2) DEFAULT 0,
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity DECIMAL(10, 2) NOT NULL CHECK (quantity > 0),
   unit_type TEXT NOT NULL CHECK (unit_type IN ('kg', 'unit')),
   price_at_purchase DECIMAL(10, 2) NOT NULL,
+  actual_quantity DECIMAL(10, 2),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
