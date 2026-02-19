@@ -34,5 +34,5 @@ docs/             - Setup guide
 ## Conventions
 - All user-facing text is in Hebrew
 - Currency is NIS (Israeli Shekel)
-- Categories: fruits, vegetables, herbs, citrus, exotic
+- Categories: fruits, vegetables, herbs, exotic, pantry, juices
 - Units: kg or unit

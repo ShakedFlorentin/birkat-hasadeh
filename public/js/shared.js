@@ -14,16 +14,18 @@ var CATEGORIES = [
   { id: 'fruits', name: 'פירות', icon: '🍎' },
   { id: 'vegetables', name: 'ירקות', icon: '🥬' },
   { id: 'herbs', name: 'תבלינים וירק', icon: '🌿' },
-  { id: 'citrus', name: 'הדרים', icon: '🍊' },
   { id: 'exotic', name: 'אקזוטי', icon: '🥭' },
+  { id: 'pantry', name: 'מזווה', icon: '🏪' },
+  { id: 'juices', name: 'מיצים טבעיים', icon: '🧃' },
 ];
 
 var CATEGORY_MAP = {
   fruits: 'פירות',
   vegetables: 'ירקות',
   herbs: 'תבלינים',
-  citrus: 'הדרים',
   exotic: 'אקזוטי',
+  pantry: 'מזווה',
+  juices: 'מיצים טבעיים',
 };
 
 // ==================== PRODUCT IMAGES ====================

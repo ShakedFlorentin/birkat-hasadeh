@@ -62,13 +62,13 @@ INSERT INTO products (name_he, category, unit, description_he, image_emoji, imag
   ('בצל ירוק', 'herbs', 'unit', 'צרור בצל ירוק', '🌿', 'https://images.unsplash.com/photo-1590165482129-1b8b27698780?w=300&h=300&fit=crop&q=80', 5),
   ('שום', 'herbs', 'kg', 'שום ישראלי', '🧄', 'https://images.unsplash.com/photo-1540148426945-6cf22a6b2571?w=300&h=300&fit=crop&q=80', 6);
 
--- הדרים
+-- פירות הדר (כעת תחת פירות)
 INSERT INTO products (name_he, category, unit, description_he, image_emoji, image_url, sort_order) VALUES
-  ('תפוזים', 'citrus', 'kg', 'תפוזים מתוקים למיץ', '🍊', 'https://images.unsplash.com/photo-1547514701-42fee727e36e?w=300&h=300&fit=crop&q=80', 1),
-  ('לימון', 'citrus', 'kg', 'לימונים צהובים', '🍋', 'https://images.unsplash.com/photo-1590502593747-42a996133562?w=300&h=300&fit=crop&q=80', 2),
-  ('קלמנטינות', 'citrus', 'kg', 'קלמנטינות מתוקות', '🍊', 'https://images.unsplash.com/photo-1611080626919-7cf5a9dbab5b?w=300&h=300&fit=crop&q=80', 3),
-  ('פומלה', 'citrus', 'unit', 'פומלה גדולה ומתוקה', '🍊', 'https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=300&h=300&fit=crop&q=80', 4),
-  ('אשכולית', 'citrus', 'kg', 'אשכוליות אדומות', '🍊', 'https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=300&h=300&fit=crop&q=80', 5);
+  ('תפוזים', 'fruits', 'kg', 'תפוזים מתוקים למיץ', '🍊', 'https://images.unsplash.com/photo-1547514701-42fee727e36e?w=300&h=300&fit=crop&q=80', 11),
+  ('לימון', 'fruits', 'kg', 'לימונים צהובים', '🍋', 'https://images.unsplash.com/photo-1590502593747-42a996133562?w=300&h=300&fit=crop&q=80', 12),
+  ('קלמנטינות', 'fruits', 'kg', 'קלמנטינות מתוקות', '🍊', 'https://images.unsplash.com/photo-1611080626919-7cf5a9dbab5b?w=300&h=300&fit=crop&q=80', 13),
+  ('פומלה', 'fruits', 'unit', 'פומלה גדולה ומתוקה', '🍊', 'https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=300&h=300&fit=crop&q=80', 14),
+  ('אשכולית', 'fruits', 'kg', 'אשכוליות אדומות', '🍊', 'https://images.unsplash.com/photo-1577234286642-fc512a5f8f11?w=300&h=300&fit=crop&q=80', 15);
 
 -- אקזוטי
 INSERT INTO products (name_he, category, unit, description_he, image_emoji, image_url, sort_order) VALUES

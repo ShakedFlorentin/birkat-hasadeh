@@ -80,3 +80,23 @@ RETURNS JSON AS $$
     'completed_orders_today', (SELECT COUNT(*) FROM orders WHERE order_date = CURRENT_DATE AND status = 'completed')
   );
 $$ LANGUAGE SQL STABLE;
+
+-- ============================================
+-- פונקציות למשקל בפועל (actual weight)
+-- ============================================
+
+-- עדכון משקל בפועל של פריט הזמנה
+CREATE OR REPLACE FUNCTION update_order_item_actual(p_item_id UUID, p_actual_qty DECIMAL)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE order_items SET actual_quantity = p_actual_qty WHERE id = p_item_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- עדכון סכום סופי של הזמנה
+CREATE OR REPLACE FUNCTION update_order_total(p_order_id UUID, p_total DECIMAL)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE orders SET total_amount = p_total WHERE id = p_order_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
